@@ -238,6 +238,20 @@ check(uno("select count(*) from turnos t join negocios n on n.id=t.negocio_id wh
       '  → sin tocar los otros negocios')
 check('/login' in c4.get('/agenda').headers.get('Location', ''), '  → quien estaba en la demo vieja vuelve al ingreso')
 
+# Reinicio automático: si la demo es de un día anterior, se rearma al entrar
+con_v = db(); con_v.execute("update usuarios set creado_en='2000-01-01 00:00:00' where email=?", (A.DEMO_EMAIL,)); con_v.commit()
+demo_vieja = uno("select id from negocios where nombre='Espacio Bienestar'")
+c5 = A.app.test_client()
+t5 = token(c5)
+c5.post('/demo', data={'_csrf': t5})
+check(uno("select id from negocios where nombre='Espacio Bienestar'") != demo_vieja and
+      uno("select count(*) from negocios where nombre='Espacio Bienestar'") == 1, 'demo de un día anterior se rearma sola al entrar')
+check(c5.get('/agenda').status_code == 200, '  → y se entra normalmente')
+demo_nueva = uno("select id from negocios where nombre='Espacio Bienestar'")
+c5.post('/logout', data={'_csrf': token(c5, '/agenda')})
+c5.post('/demo', data={'_csrf': token(c5)})
+check(uno("select id from negocios where nombre='Espacio Bienestar'") == demo_nueva, 'demo del mismo día no se reinicia')
+
 for url in ['/clientes', '/clientes?q=gru', '/equipo', '/negocio', '/ayuda', f'/agenda?fecha={lunes.isoformat()}', '/agenda?fecha=basura']:
     check(c.get(url).status_code == 200, f'GET {url}')
 

@@ -11,6 +11,8 @@ from datetime import datetime, timedelta, date, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
+import demo
+
 # ============================================================
 #  CONFIGURACIÓN
 # ============================================================
@@ -441,7 +443,13 @@ def login():
 
 @app.route('/demo', methods=['POST'])
 def entrar_demo():
-    """Entra directo al negocio de demostración, sin contraseña."""
+    """Entra directo al negocio de demostración, sin contraseña.
+    Si la demo es de un día anterior, primero la vuelve a armar con turnos de esta semana."""
+    db = get_db()
+    medianoche_utc = (ahora().replace(hour=0, minute=0, second=0, microsecond=0)
+                      .astimezone(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'))
+    if demo.creada_antes_de(db, DEMO_EMAIL, medianoche_utc):
+        demo.crear(db, DEMO_EMAIL, hoy())
     prof = profesional_demo()
     if not prof:
         flash('La demo no está disponible en este momento.', 'warning')
