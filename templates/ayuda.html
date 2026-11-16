@@ -34,12 +34,43 @@
     .tema.oculto { display: none; }
     .sin-resultados { text-align: center; color: var(--mid); padding: 2rem 0; display: none; }
     .acerca { text-align: center; color: var(--mid); font-size: 0.82rem; }
+    .recorrido {
+        background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow);
+        padding: 1rem; margin-bottom: 1rem; display: flex; gap: 1.2rem; align-items: center;
+    }
+    .recorrido video {
+        width: 260px; max-width: 45%; aspect-ratio: 600 / 1300; flex-shrink: 0;
+        border-radius: 14px; background: #1B1F23; box-shadow: 0 4px 18px rgba(0,0,0,0.18);
+    }
+    .recorrido h6 { font-weight: 700; margin-bottom: 0.4rem; }
+    .recorrido ul { font-size: 0.85rem; color: var(--mid); padding-left: 1.1rem; margin: 0; }
+    @media (max-width: 575px) {
+        .recorrido { flex-direction: column; text-align: center; }
+        .recorrido video { width: 72%; max-width: 280px; }
+        .recorrido ul { display: none; }
+    }
 </style>
 
 <div class="ayuda">
     <div class="mb-3">
         <h4 class="mb-0" style="font-family:'DM Serif Display',serif;">¿Cómo se usa?</h4>
-        <span class="text-muted" style="font-size:0.8rem;">Tocá un tema para abrirlo, o buscá lo que necesitás.</span>
+        <span class="text-muted" style="font-size:0.8rem;">Mirá el recorrido, tocá un tema para abrirlo, o buscá lo que necesitás.</span>
+    </div>
+
+    <div class="recorrido">
+        <video controls playsinline muted preload="none"
+               poster="{{ url_for('static', filename='ayuda/recorrido.jpg') }}">
+            <source src="{{ url_for('static', filename='ayuda/recorrido.mp4') }}" type="video/mp4">
+        </video>
+        <div>
+            <h6><i class="fas fa-play-circle me-1" style="color:var(--brand)"></i>Recorrido en 1 minuto</h6>
+            <ul>
+                <li>Cambiar de día y leer la agenda</li>
+                <li>Agendar un turno con un cliente nuevo</li>
+                <li>Mover un turno y avisar por WhatsApp</li>
+                <li>Marcar una falta y recuperarla</li>
+            </ul>
+        </div>
     </div>
 
     <div class="ayuda-buscar">
