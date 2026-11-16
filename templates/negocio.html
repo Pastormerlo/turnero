@@ -1,0 +1,205 @@
+{% extends 'layout.html' %}
+{% block title %}Negocio · {{ session.get('negocio_nombre', 'Turnero') }}{% endblock %}
+{% macro campos_servicio(s=None, sufijo='nuevo') %}
+<div class="mb-3">
+    <label class="small">Nombre *</label>
+    <input type="text" name="nombre" class="form-control" value="{{ s.nombre if s else '' }}" required maxlength="60"
+           placeholder="Ej: Masaje descontracturante, Cejas, Clase grupal">
+</div>
+<div class="row g-3 mb-3">
+    <div class="col-6">
+        <label class="small">Duración</label>
+        <select name="duracion" class="form-select">
+            {% for d in duraciones %}
+            <option value="{{ d }}" {% if (s and s.duracion == d) or (not s and d == 60) %}selected{% endif %}>
+                {% if d < 60 %}{{ d }} min{% elif d % 60 %}{{ d // 60 }} h {{ d % 60 }} min{% else %}{{ d // 60 }} h{% endif %}
+            </option>
+            {% endfor %}
+            {% if s and s.duracion not in duraciones %}<option value="{{ s.duracion }}" selected>{{ s.duracion }} min</option>{% endif %}
+        </select>
+    </div>
+    <div class="col-6">
+        <label class="small">Personas por turno</label>
+        <input type="number" name="cupo" class="form-control" min="1" max="50" value="{{ s.cupo if s else 1 }}">
+    </div>
+</div>
+<div class="form-text mb-3" style="font-size:0.75rem;">
+    1 = atención individual. Más de 1 = clase grupal: varias personas en el mismo horario con el mismo profesional.
+</div>
+<label class="small d-block">Color en la agenda</label>
+<div class="d-flex gap-2 flex-wrap">
+    {% for nombre, par in colores.items() %}
+    <label class="color-op">
+        <input type="radio" name="color" value="{{ nombre }}" {% if (s and s.color == nombre) or (not s and loop.first) %}checked{% endif %}>
+        <span style="background:{{ par[0] }}; border-left:4px solid {{ par[1] }};" title="{{ nombre|capitalize }}"></span>
+    </label>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<style>
+    .caja { max-width: 640px; margin: 0 auto; }
+    .seccion { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--mid); margin: 1.4rem 0 0.7rem; display: block; }
+    .dia-op input { display: none; }
+    .dia-op span {
+        display: inline-block; min-width: 46px; text-align: center; padding: 0.4rem 0.6rem; border-radius: 10px;
+        border: 1.5px solid #E2E8E0; font-size: 0.82rem; cursor: pointer; user-select: none;
+    }
+    .dia-op input:checked + span { background: var(--brand); border-color: var(--brand); color: #fff; }
+    .color-op input { display: none; }
+    .color-op span { display: inline-block; width: 38px; height: 28px; border-radius: 6px; cursor: pointer; outline-offset: 2px; }
+    .color-op input:checked + span { outline: 2px solid var(--dark); }
+    .servicio-row { display: flex; align-items: center; gap: 0.8rem; padding: 0.75rem 1.1rem; border-bottom: 1px solid #F0F4EE; }
+    .servicio-row:last-child { border-bottom: none; }
+    .muestra { width: 10px; height: 34px; border-radius: 4px; flex-shrink: 0; }
+    .btn-accion {
+        width: 32px; height: 32px; border-radius: 8px; border: none; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; font-size: 0.8rem;
+    }
+    .btn-editar { background: #E8F4FD; color: #2980B9; }
+    .btn-borrar { background: #FFE5E5; color: #C0392B; }
+    .logo-preview { width: 72px; height: 72px; border-radius: 14px; object-fit: contain; background: #F8FAF7; border: 2px solid #E2E8E0; padding: 4px; }
+</style>
+
+<div class="caja">
+    <div class="mb-3">
+        <h4 class="mb-0" style="font-family:'DM Serif Display',serif;">Tu negocio</h4>
+        <span class="text-muted" style="font-size:0.8rem;">Datos, horario de atención y servicios</span>
+    </div>
+
+    <!-- SERVICIOS -->
+    <div class="card mb-4" id="servicios">
+        <div class="card-header-custom">
+            <h6><i class="fas fa-concierge-bell me-2"></i>Servicios</h6>
+            <button class="btn btn-sm btn-light" style="border-radius:8px; font-size:0.78rem;" data-bs-toggle="modal" data-bs-target="#modalServicio">
+                <i class="fas fa-plus me-1"></i>Agregar
+            </button>
+        </div>
+        {% for s in servicios %}
+        <div class="servicio-row" {% if not s.activo %}style="opacity:0.55"{% endif %}>
+            <div class="muestra" style="background:{{ colores[s.color][0] }}; border-left:4px solid {{ colores[s.color][1] }};"></div>
+            <div style="flex:1; min-width:0;">
+                <div style="font-weight:600;">{{ s.nombre }} {% if not s.activo %}<span class="badge-gris ms-1">Inactivo</span>{% endif %}</div>
+                <div style="font-size:0.78rem; color:var(--mid);">
+                    {{ s.duracion }} min · {% if s.cupo == 1 %}individual{% else %}grupal, hasta {{ s.cupo }} personas{% endif %}
+                </div>
+            </div>
+            <button class="btn-accion btn-editar" data-bs-toggle="modal" data-bs-target="#servicio-{{ s.id }}" title="Editar"><i class="fas fa-edit"></i></button>
+            <form action="{{ url_for('activar_servicio', sid=s.id) }}" method="POST" class="m-0">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <input type="hidden" name="activo" value="{{ 0 if s.activo else 1 }}">
+                {% if s.activo %}
+                <button class="btn-accion btn-borrar" title="Dejar de ofrecer"><i class="fas fa-eye-slash"></i></button>
+                {% else %}
+                <button class="btn-accion btn-editar" title="Volver a ofrecer"><i class="fas fa-undo"></i></button>
+                {% endif %}
+            </form>
+        </div>
+
+        <div class="modal fade" id="servicio-{{ s.id }}" tabindex="-1">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <form action="{{ url_for('editar_servicio', sid=s.id) }}" method="POST">
+                        <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                        <div class="modal-header">
+                            <h6 class="modal-title fw-bold"><i class="fas fa-edit me-2"></i>{{ s.nombre }}</h6>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body p-4">
+                            {{ campos_servicio(s, s.id) }}
+                            <div class="mt-3" style="font-size:0.75rem; color:var(--mid);">
+                                <i class="fas fa-info-circle me-1"></i>Los turnos ya agendados mantienen su duración; el cambio aplica a los nuevos.
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn-ghost" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="submit" class="btn-brand"><i class="fas fa-save me-1"></i> Guardar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- DATOS Y HORARIO -->
+    <div class="card">
+        <div class="card-header-custom"><h6><i class="fas fa-store me-2"></i>Datos y horario</h6></div>
+        <div class="card-body p-4">
+            <form action="{{ url_for('negocio') }}" method="POST" enctype="multipart/form-data">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+
+                <label class="small">Nombre del negocio *</label>
+                <input type="text" name="nombre" class="form-control" value="{{ negocio.nombre }}" required>
+                <div style="font-size:0.72rem; color:var(--mid); margin-top:4px;">Aparece arriba en la app y al final de los mensajes de WhatsApp.</div>
+
+                <span class="seccion">Días de atención</span>
+                <div class="d-flex gap-2 flex-wrap">
+                    {% for d in range(7) %}
+                    <label class="dia-op">
+                        <input type="checkbox" name="dias" value="{{ d }}" {% if d in negocio.dias_lista %}checked{% endif %}>
+                        <span>{{ dias[d][:3] }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+
+                <span class="seccion">Horario</span>
+                <div class="row g-3">
+                    <div class="col-4">
+                        <label class="small">Abre</label>
+                        <select name="hora_apertura" class="form-select">
+                            {% for h in horas[:-1] %}<option value="{{ h }}" {% if h == negocio.hora_apertura %}selected{% endif %}>{{ h|hhmm }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-4">
+                        <label class="small">Cierra</label>
+                        <select name="hora_cierre" class="form-select">
+                            {% for h in horas[1:] %}<option value="{{ h }}" {% if h == negocio.hora_cierre %}selected{% endif %}>{{ h|hhmm if h < 1440 else '24:00' }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-4">
+                        <label class="small">Turnos cada</label>
+                        <select name="intervalo" class="form-select">
+                            {% for i in [15, 30, 60] %}<option value="{{ i }}" {% if i == negocio.intervalo %}selected{% endif %}>{{ i }} min</option>{% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div style="font-size:0.72rem; color:var(--mid); margin-top:4px;">"Turnos cada" define los horarios que se pueden elegir en la agenda (ej. cada 15 min: 9:00, 9:15, 9:30...).</div>
+
+                <span class="seccion">Logo</span>
+                <div class="d-flex align-items-center gap-3 mb-4">
+                    {% if negocio.logo_url %}
+                    <img src="{{ url_for('static', filename='uploads/' + negocio.logo_url) }}" class="logo-preview" alt="Logo">
+                    {% endif %}
+                    <div style="flex:1;">
+                        <input type="file" name="logo" class="form-control" accept="image/*" style="font-size:0.82rem;">
+                        <div style="font-size:0.72rem; color:var(--mid); margin-top:4px;">PNG o JPG cuadrado · Máx 2 MB</div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-brand w-100"><i class="fas fa-save me-1"></i> Guardar</button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalServicio" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form action="{{ url_for('agregar_servicio') }}" method="POST">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="fas fa-plus me-2"></i>Nuevo servicio</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">{{ campos_servicio() }}</div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-ghost" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn-brand"><i class="fas fa-check me-1"></i> Agregar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

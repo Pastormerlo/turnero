@@ -1,0 +1,225 @@
+{% extends 'layout.html' %}
+{% block title %}Ayuda · {{ session.get('negocio_nombre', 'Turnero') }}{% endblock %}
+{% block content %}
+<style>
+    .ayuda { max-width: 760px; margin: 0 auto; }
+    .ayuda-buscar { position: relative; margin-bottom: 1rem; }
+    .ayuda-buscar i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--mid); font-size: 0.85rem; }
+    .ayuda-buscar input { padding-left: 36px; }
+    .tema {
+        background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow);
+        margin-bottom: 0.6rem; overflow: hidden;
+    }
+    .tema summary {
+        list-style: none; cursor: pointer;
+        display: flex; align-items: center; gap: 0.8rem;
+        padding: 0.9rem 1.1rem; font-weight: 600; font-size: 0.95rem;
+    }
+    .tema summary::-webkit-details-marker { display: none; }
+    .tema summary .ico {
+        width: 34px; height: 34px; border-radius: 10px; flex-shrink: 0;
+        background: var(--brand-pale); color: var(--brand);
+        display: flex; align-items: center; justify-content: center; font-size: 0.9rem;
+    }
+    .tema summary .flecha { margin-left: auto; color: var(--mid); font-size: 0.8rem; transition: transform 0.2s; }
+    .tema[open] summary .flecha { transform: rotate(180deg); }
+    .tema-cuerpo { padding: 0 1.2rem 1.1rem 1.2rem; font-size: 0.9rem; line-height: 1.55; }
+    .tema-cuerpo h6 { font-size: 0.82rem; font-weight: 700; margin: 1rem 0 0.4rem; color: var(--dark); }
+    .tema-cuerpo ol, .tema-cuerpo ul { padding-left: 1.2rem; margin-bottom: 0.6rem; }
+    .tema-cuerpo li { margin-bottom: 0.25rem; }
+    .tema-cuerpo table { width: 100%; font-size: 0.85rem; margin-bottom: 0.6rem; }
+    .tema-cuerpo td { padding: 0.45rem 0.5rem; border-bottom: 1px solid #EEF2EC; vertical-align: top; }
+    .tema-cuerpo td:first-child { font-weight: 600; width: 42%; }
+    .muestra { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+    .tema.oculto { display: none; }
+    .sin-resultados { text-align: center; color: var(--mid); padding: 2rem 0; display: none; }
+    .acerca { text-align: center; color: var(--mid); font-size: 0.82rem; }
+</style>
+
+<div class="ayuda">
+    <div class="mb-3">
+        <h4 class="mb-0" style="font-family:'DM Serif Display',serif;">¿Cómo se usa?</h4>
+        <span class="text-muted" style="font-size:0.8rem;">Tocá un tema para abrirlo, o buscá lo que necesitás.</span>
+    </div>
+
+    <div class="ayuda-buscar">
+        <i class="fas fa-search"></i>
+        <input type="search" id="buscar" class="form-control" placeholder="Buscar: servicio, recuperar, WhatsApp..." autocomplete="off">
+    </div>
+
+    <details class="tema" id="inicio">
+        <summary><span class="ico"><i class="fas fa-play"></i></span>Primeros pasos<i class="fas fa-chevron-down flecha"></i></summary>
+        <div class="tema-cuerpo">
+            <p>La pantalla principal es la <b>agenda de la semana</b>. Desde ahí agendás, movés y quitás turnos.</p>
+            {% if es_admin %}
+            <h6>Antes de empezar (admin)</h6>
+            <ol>
+                <li>En <b>Negocio</b>, cargá tus <b>servicios</b> con su duración y cuántas personas entran (1 si es individual).</li>
+                <li>Revisá los <b>días y el horario</b> de atención, y cada cuántos minutos se pueden dar turnos.</li>
+                <li>Si trabajás con más gente, sumala en <b>Equipo</b>.</li>
+            </ol>
+            {% endif %}
+            <h6>Tenerla como una app en el celular</h6>
+            <ul class="mb-0">
+                <li><b>Android (Chrome):</b> menú ⋮ → <b>Agregar a pantalla principal</b>.</li>
+                <li><b>iPhone (Safari):</b> botón Compartir → <b>Agregar a inicio</b>.</li>
+            </ul>
+        </div>
+    </details>
+
+    <details class="tema" id="agenda">
+        <summary><span class="ico"><i class="fas fa-calendar-week"></i></span>Leer la agenda<i class="fas fa-chevron-down flecha"></i></summary>
+        <div class="tema-cuerpo">
+            <p>Cada turno ocupa en la grilla el alto de su duración y tiene el color de su servicio. Si dos turnos coinciden en horario (por ejemplo, de dos profesionales distintos), se muestran lado a lado.</p>
+            <table>
+                <tr><td><i class="fas fa-thumbtack"></i> Chinche</td><td>Turno fijo: se repite todas las semanas.</td></tr>
+                <tr><td><i class="fas fa-redo" style="color:var(--accent)"></i> Flecha</td><td>Es una recuperación.</td></tr>
+                <tr><td><b style="color:#B85C00">↺1</b></td><td>Turnos que el cliente tiene por recuperar.</td></tr>
+                <tr><td>Clase · 3/6</td><td>Servicio grupal: 3 personas anotadas de 6 lugares.</td></tr>
+                <tr><td>LA, MA…</td><td>Iniciales del profesional (solo si hay varios).</td></tr>
+            </table>
+            <p class="mb-0">Con las flechas ‹ › pasás de semana; <b>Hoy</b> vuelve a la actual. En el celular se ve un día por vez: tocá las pestañas de arriba. Si hay varios profesionales, podés filtrar la agenda por cada uno.</p>
+        </div>
+    </details>
+
+    <details class="tema" id="agendar">
+        <summary><span class="ico"><i class="fas fa-plus"></i></span>Agendar un turno<i class="fas fa-chevron-down flecha"></i></summary>
+        <div class="tema-cuerpo">
+            <ol>
+                <li>Tocá un horario libre de la agenda, o el botón <b>+ Turno</b>. Para sumar a alguien a una clase grupal, tocá esa clase.</li>
+                <li>Elegí el cliente. Si es nuevo, elegí <b>＋ Cliente nuevo</b> y escribí nombre y celular: se guarda solo.</li>
+                <li>Elegí el servicio (y el profesional, si sos admin).</li>
+                <li>Elegí <b>Una sola vez</b> o <b>Todas las semanas</b>, revisá fecha y hora, y tocá <b>Agendar</b>.</li>
+            </ol>
+            <p class="mb-0">La app no deja agendar si el profesional ya tiene otro turno que se superpone, si se completó el cupo, si el cliente ya tiene un turno a esa hora, o fuera del horario de atención.</p>
+        </div>
+    </details>
+
+    <details class="tema" id="mover">
+        <summary><span class="ico"><i class="fas fa-arrows-alt"></i></span>Mover un turno<i class="fas fa-chevron-down flecha"></i></summary>
+        <div class="tema-cuerpo">
+            <ol>
+                <li>Tocá el turno. Se pone oscuro y abajo aparece una barra con sus datos.</li>
+                <li>Tocá el horario nuevo (en la compu también podés arrastrarlo; un recuadro punteado muestra dónde va a quedar). En el celular, si es otro día, primero tocá la pestaña de ese día.</li>
+                <li>Confirmá. Si es un turno fijo, elegís <b>Solo esta semana</b> o <b>Todas las semanas</b>.</li>
+            </ol>
+            <p class="mb-0">El turno conserva su duración. Para cancelar, tocá la <b>×</b> de la barra.</p>
+        </div>
+    </details>
+
+    <details class="tema" id="quitar">
+        <summary><span class="ico"><i class="fas fa-trash-alt"></i></span>Quitar un turno o marcar una falta<i class="fas fa-chevron-down flecha"></i></summary>
+        <div class="tema-cuerpo">
+            <p class="mb-0">Tocá el turno → <b>Quitar</b>. En un turno fijo elegís <b>Solo esta semana</b> (falta avisada: queda para recuperar) o <b>Quitar el turno fijo para siempre</b>.</p>
+        </div>
+    </details>
+
+    <details class="tema" id="recuperar">
+        <summary><span class="ico"><i class="fas fa-redo"></i></span>Turnos por recuperar<i class="fas fa-chevron-down flecha"></i></summary>
+        <div class="tema-cuerpo">
+            <ol>
+                <li>Tocá la pastilla naranja <b>↺ por recuperar</b> arriba de la agenda → <b>Agendar</b>. O tocá al cliente (tiene la marca ↺) → <b>Recuperar</b>.</li>
+                <li>La barra se pone marrón. Si recupera otra semana, pasá de semana con las flechas: el modo recuperar sigue activo.</li>
+                <li>Tocá el horario donde viene.</li>
+            </ol>
+            <ul class="mb-0">
+                <li><b>No lo recupera:</b> lo saca de la lista.</li>
+                <li><b>Fue un error, no faltó:</b> borra la falta y vuelve el turno original.</li>
+                <li>Si quitás un turno de recuperación, la falta vuelve a quedar pendiente.</li>
+            </ul>
+        </div>
+    </details>
+
+    <details class="tema" id="whatsapp">
+        <summary><span class="ico"><i class="fab fa-whatsapp"></i></span>Avisar por WhatsApp<i class="fas fa-chevron-down flecha"></i></summary>
+        <div class="tema-cuerpo">
+            <p>Después de mover, quitar o recuperar un turno aparece el mensaje ya escrito (lo podés editar). Tocá <b>Avisar por WhatsApp</b> y solo te queda tocar Enviar.</p>
+            <p>Para mandar un recordatorio en cualquier momento: tocá el turno → <b>WhatsApp</b>.</p>
+            <p class="mb-0">El celular tiene que estar cargado con código de área (ej. 11 4408-1508); la app agrega el +54 9 sola.</p>
+        </div>
+    </details>
+
+    <details class="tema" id="clientes">
+        <summary><span class="ico"><i class="fas fa-users"></i></span>Clientes<i class="fas fa-chevron-down flecha"></i></summary>
+        <div class="tema-cuerpo">
+            <ul class="mb-0">
+                <li>En <b>Clientes</b> ves a todos con sus turnos fijos, su próximo turno y si tienen algo por recuperar.</li>
+                <li>El lápiz azul abre la ficha: nombre, celular, email y notas. Desde la agenda: tocá el turno → <b>Ficha</b>.</li>
+                <li>Buscá por nombre, apellido o celular.</li>
+                <li>El tacho rojo da de baja al cliente y libera sus turnos.</li>
+            </ul>
+        </div>
+    </details>
+
+    {% if es_admin %}
+    <details class="tema" id="negocio">
+        <summary><span class="ico"><i class="fas fa-store"></i></span>Servicios, horario y equipo (admin)<i class="fas fa-chevron-down flecha"></i></summary>
+        <div class="tema-cuerpo">
+            <h6>Servicios</h6>
+            <ul>
+                <li>Cada servicio tiene <b>duración</b>, <b>personas por turno</b> (1 = individual; más = clase grupal) y un <b>color</b>.</li>
+                <li>Si cambiás la duración, los turnos ya agendados quedan como estaban.</li>
+                <li>Un servicio que ya no ofrecés se oculta con el ojo tachado; no se borra su historial.</li>
+            </ul>
+            <h6>Horario</h6>
+            <p>Días de atención, horario de apertura y cierre, y cada cuántos minutos se pueden dar turnos (15, 30 o 60).</p>
+            <h6>Equipo</h6>
+            <p class="mb-0">Sumá profesionales con su email y contraseña. Un <b>profesional</b> ve solo su agenda; un <b>admin</b> ve y maneja todo. Si desactivás a alguien, deja de poder entrar en el momento.</p>
+        </div>
+    </details>
+    {% endif %}
+
+    <details class="tema" id="preguntas">
+        <summary><span class="ico"><i class="fas fa-question"></i></span>Preguntas frecuentes<i class="fas fa-chevron-down flecha"></i></summary>
+        <div class="tema-cuerpo">
+            <table class="mb-0">
+                <tr><td>No me deja agendar o mover</td><td>El aviso de arriba dice por qué: horario ocupado, cupo completo, cliente con otro turno o fuera de horario.</td></tr>
+                <tr><td>Un cliente avisa que falta</td><td>Tocalo → Quitar → Solo esta semana. Queda para recuperar.</td></tr>
+                <tr><td>Cambia su horario fijo</td><td>Tocalo, tocá el horario nuevo → Todas las semanas.</td></tr>
+                <tr><td>No veo turnos de otros profesionales</td><td>Es normal: cada profesional ve los suyos; el admin, todos.</td></tr>
+                <tr><td>"La sesión expiró"</td><td>Recargá la página y repetí lo que estabas haciendo.</td></tr>
+                <tr><td>Me olvidé la contraseña</td><td>El admin puede ponerte una nueva desde Equipo.</td></tr>
+            </table>
+        </div>
+    </details>
+
+    <div class="sin-resultados" id="sinResultados">
+        <i class="fas fa-search fa-lg mb-2 d-block"></i>No encontramos nada con esa palabra.
+    </div>
+
+    <div class="acerca mt-4" id="acerca">
+        <div style="font-family:'DM Serif Display',serif; font-size:1.05rem; color:var(--dark);">Turnero</div>
+        Versión {{ version }} · {{ session.get('negocio_nombre', '') }}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    const temas = [...document.querySelectorAll('.tema')];
+    const buscar = document.getElementById('buscar');
+    const sinRes = document.getElementById('sinResultados');
+    const normal = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+    // Abrir el tema indicado en el link (ej. /ayuda#recuperar)
+    const destino = location.hash && document.getElementById(location.hash.slice(1));
+    if (destino && destino.classList.contains('tema')) {
+        destino.open = true;
+        setTimeout(() => destino.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+    }
+
+    buscar.addEventListener('input', () => {
+        const q = normal(buscar.value.trim());
+        let hay = 0;
+        temas.forEach(t => {
+            const coincide = !q || normal(t.textContent).includes(q);
+            t.classList.toggle('oculto', !coincide);
+            if (q) t.open = coincide;   // con búsqueda se abren las coincidencias; al borrarla no se cierra nada
+            if (coincide) hay++;
+        });
+        sinRes.style.display = hay ? 'none' : 'block';
+    });
+})();
+</script>
+{% endblock %}

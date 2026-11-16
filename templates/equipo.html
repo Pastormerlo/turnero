@@ -1,0 +1,144 @@
+{% extends 'layout.html' %}
+{% block title %}Equipo · {{ session.get('negocio_nombre', 'Turnero') }}{% endblock %}
+{% block content %}
+<style>
+    .prof-card {
+        background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow);
+        padding: 1rem 1.2rem; display: flex; align-items: center; gap: 1rem; margin-bottom: 0.6rem;
+    }
+    .prof-avatar {
+        width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0; color: #fff;
+        display: flex; align-items: center; justify-content: center; font-weight: 700;
+    }
+    .avatar-admin { background: var(--brand); }
+    .avatar-prof  { background: #2980B9; }
+    .btn-accion {
+        width: 32px; height: 32px; border-radius: 8px; border: none; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; font-size: 0.8rem;
+    }
+    .btn-editar { background: #E8F4FD; color: #2980B9; }
+    .btn-borrar { background: #FFE5E5; color: #C0392B; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-0" style="font-family:'DM Serif Display',serif;">Equipo</h4>
+        <span class="text-muted" style="font-size:0.8rem;">Las personas que atienden y pueden entrar a la agenda</span>
+    </div>
+    <button class="btn-brand" data-bs-toggle="modal" data-bs-target="#modalNuevo"><i class="fas fa-user-plus me-1"></i> Sumar profesional</button>
+</div>
+
+{% for p in profesionales %}
+<div class="prof-card" {% if not p.activo %}style="opacity:0.6"{% endif %}>
+    <div class="prof-avatar {{ 'avatar-admin' if p.rol == 'admin' else 'avatar-prof' }}">{{ p.nombre[:1]|upper }}</div>
+    <div style="flex:1; min-width:0;">
+        <div style="font-weight:600;">
+            {{ p.nombre }}
+            {% if not p.activo %}<span class="badge-rojo ms-1">Inactivo</span>{% endif %}
+        </div>
+        <div style="font-size:0.78rem; color:var(--mid);"><i class="fas fa-envelope me-1"></i>{{ p.email }}</div>
+    </div>
+    <div class="d-flex gap-2 align-items-center flex-shrink-0">
+        {% if p.rol == 'admin' %}<span class="badge-verde"><i class="fas fa-crown me-1"></i>Admin</span>
+        {% else %}<span class="badge-gris">Profesional</span>{% endif %}
+        <button class="btn-accion btn-editar" data-bs-toggle="modal" data-bs-target="#modalEdit{{ p.id }}" title="Editar"><i class="fas fa-edit"></i></button>
+        {% if p.id != session.get('profesional_id') %}
+        <form action="{{ url_for('activar_profesional', pid=p.id) }}" method="POST" class="m-0"
+              {% if p.activo %}data-confirmar="¿Desactivar a {{ p.nombre }}? No va a poder ingresar."{% endif %}>
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <input type="hidden" name="activo" value="{{ 0 if p.activo else 1 }}">
+            {% if p.activo %}
+            <button class="btn-accion btn-borrar" title="Desactivar"><i class="fas fa-ban"></i></button>
+            {% else %}
+            <button class="btn-accion btn-editar" title="Reactivar"><i class="fas fa-undo"></i></button>
+            {% endif %}
+        </form>
+        {% endif %}
+    </div>
+</div>
+
+<div class="modal fade" id="modalEdit{{ p.id }}" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form action="{{ url_for('editar_profesional', pid=p.id) }}" method="POST">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="fas fa-user-edit me-2"></i>{{ p.nombre }}</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="small">Nombre *</label>
+                        <input type="text" name="nombre" class="form-control" value="{{ p.nombre }}" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small">Rol</label>
+                        <select name="rol" class="form-select" {% if p.id == session.get('profesional_id') %}disabled{% endif %}>
+                            <option value="profesional" {% if p.rol == 'profesional' %}selected{% endif %}>Profesional (solo su agenda)</option>
+                            <option value="admin" {% if p.rol == 'admin' %}selected{% endif %}>Admin (ve y maneja todo)</option>
+                        </select>
+                    </div>
+                    <div class="mb-1">
+                        <label class="small">Nueva contraseña <span style="font-weight:400;text-transform:none;">(vacío = no cambia)</span></label>
+                        <input type="password" name="password" class="form-control" minlength="6" placeholder="••••••">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-ghost" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn-brand"><i class="fas fa-save me-1"></i> Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<div class="modal fade" id="modalNuevo" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <form action="{{ url_for('agregar_profesional') }}" method="POST">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="fas fa-user-plus me-2"></i>Sumar profesional</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="small">Nombre *</label>
+                        <input type="text" name="nombre" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small">Email (para ingresar) *</label>
+                        <input type="email" name="email" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="small">Contraseña *</label>
+                        <input type="password" name="password" class="form-control" required minlength="6" placeholder="Mínimo 6 caracteres">
+                    </div>
+                    <div class="mb-3">
+                        <label class="small">Rol</label>
+                        <select name="rol" class="form-select">
+                            <option value="profesional">Profesional (solo su agenda)</option>
+                            <option value="admin">Admin (ve y maneja todo)</option>
+                        </select>
+                    </div>
+                    <div class="p-3 rounded" style="background:#F0F7F2; font-size:0.78rem; color:var(--brand);">
+                        <i class="fas fa-info-circle me-1"></i>Pasale el email y la contraseña para que entre desde el mismo link.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-ghost" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn-brand"><i class="fas fa-user-plus me-1"></i> Agregar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('form[data-confirmar]').forEach(f =>
+    f.addEventListener('submit', e => { if (!confirm(f.dataset.confirmar)) e.preventDefault(); }));
+</script>
+{% endblock %}

@@ -1,0 +1,864 @@
+{% extends 'layout.html' %}
+{% block container_class %}wide{% endblock %}
+{% block content %}
+{% set fila = {15: 22, 30: 30, 60: 52}[intervalo] %}
+{% set filas = ((cierre - apertura) / intervalo)|round(0, 'ceil')|int %}
+<style>
+    .main-container.wide { max-width: 1700px; }
+
+    /* ── BARRA SUPERIOR ── */
+    .toolbar { display: flex; align-items: center; justify-content: space-between; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+    .semana { display: flex; align-items: center; gap: 0.4rem; }
+    .btn-sem {
+        width: 34px; height: 34px; border-radius: 10px;
+        border: 1.5px solid #E2E8E0; background: var(--white); color: var(--dark);
+        display: flex; align-items: center; justify-content: center; text-decoration: none; font-size: 0.8rem;
+    }
+    .btn-sem:hover { background: var(--brand); border-color: var(--brand); color: #fff; }
+    .rango { font-family: 'DM Serif Display', serif; font-size: 1.25rem; padding: 0 0.3rem; white-space: nowrap; }
+    .pastillas { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+    .pastilla {
+        display: inline-flex; align-items: center; gap: 0.4rem;
+        padding: 0.35rem 0.8rem; border-radius: 999px;
+        font-size: 0.78rem; font-weight: 500; text-decoration: none;
+        background: var(--white); color: var(--dark); border: 1.5px solid #E2E8E0; cursor: pointer; white-space: nowrap;
+    }
+    .pastilla:hover { border-color: var(--brand-light); color: var(--dark); }
+    .pastilla.activa { background: var(--dark); border-color: var(--dark); color: #fff; }
+    .pastilla.naranja { background: #FFF0DC; border-color: #FFD9A8; color: #B85C00; }
+    .filtro-prof { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+
+    /* ── GRILLA ── */
+    .agenda {
+        --fila: {{ fila }}px;
+        --por-hora: {{ 60 // intervalo }};
+        display: grid;
+        grid-template-columns: 52px repeat({{ dias_vis|length }}, minmax(0, 1fr));
+        background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow);
+        overflow: clip; user-select: none;
+    }
+    .cab {
+        position: sticky; top: 0; z-index: 6;
+        background: var(--dark); color: #fff; text-align: center;
+        padding: 0.55rem 0.3rem; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    .cab span { display: block; font-weight: 400; opacity: 0.6; font-size: 0.68rem; letter-spacing: 0; }
+    .cab.hoy { background: var(--brand); }
+    .horas { position: relative; background: #F8FAF7; border-right: 2px solid #E8EDE6; height: calc({{ filas }} * var(--fila)); }
+    .hora-lbl { position: absolute; left: 0; right: 0; text-align: center; font-size: 0.68rem; font-weight: 600; color: var(--mid); transform: translateY(-50%); }
+    .hora-lbl:first-child { transform: none; padding-top: 2px; }
+    .col {
+        position: relative; height: calc({{ filas }} * var(--fila));
+        border-right: 1px solid #EEF2EC; cursor: pointer;
+        background-image:
+            repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--fila) * var(--por-hora) - 1px), #E3E9E0 calc(var(--fila) * var(--por-hora) - 1px), #E3E9E0 calc(var(--fila) * var(--por-hora))),
+            repeating-linear-gradient(to bottom, transparent 0, transparent calc(var(--fila) - 1px), #F3F6F1 calc(var(--fila) - 1px), #F3F6F1 var(--fila));
+    }
+    .col.hoy { background-color: #FBFDF9; }
+
+    /* Bloque = un turno (o una clase grupal) ubicado por horario y duración */
+    .bloque {
+        position: absolute;
+        top: calc(var(--i) * var(--fila) + 1px);
+        height: calc(var(--n) * var(--fila) - 2px);
+        left: calc(var(--carril) / var(--carriles) * 100% + 2px);
+        width: calc(100% / var(--carriles) - 4px);
+        background: var(--fondo); border-left: 3px solid var(--borde); border-radius: 6px;
+        overflow: hidden; font-size: 0.72rem; line-height: 1.2; color: #1B1F23;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+        display: flex; flex-direction: column;
+    }
+    .bloque-cab { padding: 2px 5px; font-size: 0.66rem; font-weight: 700; color: var(--borde); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+    .bloque.grupal .chips { display: flex; flex-wrap: wrap; gap: 2px; padding: 0 3px 3px; overflow: auto; }
+    .bloque.grupal .chip { background: rgba(255,255,255,0.75); border-radius: 4px; padding: 1px 5px; }
+
+    .chip { display: flex; align-items: center; gap: 4px; cursor: grab; min-width: 0; }
+    .bloque.individual .chip { flex: 1; flex-direction: column; align-items: stretch; justify-content: flex-start; padding: 2px 5px; gap: 0; }
+    .chip .linea { display: flex; align-items: center; gap: 4px; min-width: 0; }
+    .chip .nom { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .chip .det { font-size: 0.64rem; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chip .ico { font-size: 0.58rem; color: var(--borde); flex-shrink: 0; }
+    .bloque.corto .det { display: none; }
+    .bloque.corto.individual .chip { justify-content: center; padding-top: 0; padding-bottom: 0; }
+    .chip .pend { font-size: 0.6rem; font-weight: 700; background: #FFE1B8; color: #B85C00; border-radius: 4px; padding: 0 3px; flex-shrink: 0; }
+    .chip .ini { font-size: 0.56rem; font-weight: 700; background: rgba(0,0,0,0.08); border-radius: 3px; padding: 0 3px; flex-shrink: 0; margin-left: auto; }
+    .chip.sel { background: var(--dark) !important; color: #fff; border-radius: 4px; }
+    .chip.sel .ico, .chip.sel .det { color: #fff; }
+    .bloque:has(.chip.sel) { box-shadow: 0 0 0 2px var(--dark), 0 4px 14px rgba(0,0,0,0.25); z-index: 3; }
+    .chip.oculto, .bloque.oculto { display: none; }
+    .arrastrando { opacity: 0.4; }
+
+    /* Fantasma: muestra dónde caería el turno al moverlo o recuperarlo */
+    .fantasma {
+        position: absolute; left: 2px; right: 2px; z-index: 4; pointer-events: none;
+        border: 2px dashed var(--brand); border-radius: 6px; background: rgba(82,183,136,0.18);
+        font-size: 0.68rem; font-weight: 700; color: var(--brand); padding: 1px 5px;
+    }
+    .agenda.moviendo .col { cursor: copy; }
+
+    .leyenda { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.6rem; font-size: 0.74rem; color: var(--mid); align-items: center; }
+
+    /* ── BARRA DE ACCIONES ── */
+    .barra {
+        position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 1040;
+        width: min(96vw, 760px); background: var(--dark); color: #fff; border-radius: 16px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.35); padding: 0.65rem 0.75rem 0.65rem 1rem;
+        display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+    }
+    .barra[hidden] { display: none; }
+    .barra-info { flex: 1; min-width: 170px; }
+    .barra-nombre { font-weight: 600; font-size: 0.95rem; }
+    .barra-det { font-size: 0.74rem; opacity: 0.75; }
+    .barra-hint { font-size: 0.74rem; color: var(--brand-light); width: 100%; order: 3; }
+    .barra-acc { display: flex; gap: 0.35rem; }
+    .bb {
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+        min-width: 52px; height: 46px; padding: 0 6px; border-radius: 10px; border: none;
+        background: rgba(255,255,255,0.09); color: #fff; font-size: 0.62rem; text-decoration: none; cursor: pointer;
+    }
+    .bb i { font-size: 0.95rem; }
+    .bb:hover { background: rgba(255,255,255,0.18); color: #fff; }
+    .bb.rojo { color: #ff9d9d; }
+    .bb.wsp { color: #5BE38A; }
+    .bb.recup { background: var(--accent); }
+    .bb.cerrar { min-width: 40px; }
+    .barra.recuperando { background: #5C3300; }
+    .barra.recuperando .bb:not(.cerrar) { display: none; }
+    body.con-barra { padding-bottom: 120px; }
+    .btn-wsp { display: block; text-align: center; text-decoration: none; background: #25D366; color: #fff; border-radius: 10px; font-weight: 600; font-size: 0.88rem; }
+    .btn-wsp:hover { background: #1EBE5A; color: #fff; }
+    .falta-row { display: flex; align-items: center; gap: 0.8rem; padding: 0.8rem 1.2rem; border-bottom: 1px solid #F0F4EE; font-size: 0.88rem; }
+    .falta-row:last-child { border-bottom: none; }
+    .falta-det { font-size: 0.78rem; color: var(--mid); }
+    .link-chico { background: none; border: none; padding: 0; color: var(--mid); text-decoration: underline; font-size: 0.72rem; }
+
+    /* ── PESTAÑAS DE DÍA (celular) ── */
+    .tabs-dias { display: flex; gap: 4px; position: sticky; top: 0; z-index: 7; background: var(--bg); padding: 4px 0 8px; }
+    .tab-dia {
+        flex: 1; min-width: 0; border-radius: 12px; border: 1.5px solid #E2E8E0; background: var(--white);
+        padding: 5px 2px; line-height: 1.15; display: flex; flex-direction: column; align-items: center;
+        font-size: 0.68rem; color: var(--mid);
+    }
+    .tab-dia b { font-size: 1rem; color: var(--dark); }
+    .tab-dia .cnt { font-size: 0.6rem; }
+    .tab-dia.hoy { border-color: var(--brand-light); }
+    .tab-dia.activo { background: var(--dark); border-color: var(--dark); color: rgba(255,255,255,0.7); }
+    .tab-dia.activo b { color: #fff; }
+
+    @media (min-width: 768px) { .tabs-dias { display: none; } }
+    @media (max-width: 767px) {
+        .rango { font-size: 1.05rem; }
+        .agenda { grid-template-columns: 48px minmax(0, 1fr); --fila: {{ (fila * 1.25)|int }}px; }
+        .cab { display: none; }
+        .agenda .col { display: none; }
+        {% for d in dias_vis %}.agenda[data-d="{{ d }}"] .col.d{{ d }} { display: block; }
+        {% endfor %}
+        .bloque { font-size: 0.8rem; }
+        .chip .det { font-size: 0.7rem; }
+        .barra { bottom: 8px; }
+        .barra-hint { order: 0; flex-basis: 100%; }
+        .barra-acc { width: 100%; justify-content: space-between; }
+        .bb { flex: 1; min-width: 0; }
+    }
+</style>
+
+<!-- ── BARRA SUPERIOR ── -->
+<div class="toolbar">
+    <div class="semana">
+        <a href="{{ url_for('agenda', fecha=semana_anterior) }}" class="btn-sem" title="Semana anterior"><i class="fas fa-chevron-left"></i></a>
+        <div class="rango">{{ inicio.strftime('%d/%m') }} – {{ fin.strftime('%d/%m') }}</div>
+        <a href="{{ url_for('agenda', fecha=semana_siguiente) }}" class="btn-sem" title="Semana siguiente"><i class="fas fa-chevron-right"></i></a>
+        {% if not (fechas[0] <= hoy <= fechas[6]) %}
+        <a href="{{ url_for('agenda') }}" class="pastilla ms-1">Hoy</a>
+        {% endif %}
+    </div>
+    <div class="pastillas">
+        {% if pendientes %}
+        <button type="button" class="pastilla naranja" data-bs-toggle="modal" data-bs-target="#modalRecuperar">
+            <i class="fas fa-redo"></i>{{ pendientes|length }} por recuperar
+        </button>
+        {% endif %}
+        <button type="button" class="btn-brand" onclick="abrirNuevo()"><i class="fas fa-plus me-1"></i>Turno</button>
+    </div>
+</div>
+
+{% if multi %}
+<div class="filtro-prof" id="filtroProf">
+    <button type="button" class="pastilla activa" data-prof="">Todos</button>
+    {% for p in profesionales %}<button type="button" class="pastilla" data-prof="{{ p.id }}">{{ p.nombre }}</button>{% endfor %}
+</div>
+{% endif %}
+
+<!-- ── PESTAÑAS DE DÍA (celular) ── -->
+<div class="tabs-dias" id="tabs">
+    {% for d in dias_vis %}
+    <button type="button" class="tab-dia {% if fechas[d] == hoy %}hoy{% endif %}" data-d="{{ d }}">
+        {{ dias_corto[d] }}<b>{{ fechas[d].day }}</b><span class="cnt" data-cnt="{{ d }}">{{ cantidad[d] }}</span>
+    </button>
+    {% endfor %}
+</div>
+
+<!-- ── GRILLA SEMANAL ── -->
+<div class="agenda" id="agenda" data-d="{{ dias_vis[0] }}">
+    <div class="cab"></div>
+    {% for d in dias_vis %}
+    <div class="cab {% if fechas[d] == hoy %}hoy{% endif %}">{{ dias[d] }}<span>{{ fechas[d].strftime('%d/%m') }}</span></div>
+    {% endfor %}
+
+    <div class="horas">
+        {% for m in range(apertura, cierre, 60) %}
+        {% set redondo = ((m + 59) // 60) * 60 %}
+        <div class="hora-lbl" style="top: calc({{ (redondo - apertura) / intervalo }} * var(--fila));">{{ redondo|hhmm }}</div>
+        {% endfor %}
+    </div>
+
+    {% for d in dias_vis %}
+    <div class="col d{{ d }} {% if fechas[d] == hoy %}hoy{% endif %}"
+         data-d="{{ d }}" data-dia="{{ dias[d] }}" data-fecha="{{ fechas[d].isoformat() }}">
+        {% for b in por_dia[d] %}
+        {% set desde = [b.inicio, apertura]|max %}
+        {% set hasta = [b.inicio + b.duracion, cierre]|min %}
+        <div class="bloque {{ 'grupal' if b.cupo > 1 else 'individual' }} {% if (hasta - desde) / intervalo < 2 %}corto{% endif %}"
+             title="{{ b.inicio|hhmm }}–{{ (b.inicio + b.duracion)|hhmm }} · {{ b.servicio_nombre }}{% if multi %} · {{ b.profesional_nombre }}{% endif %}"
+             data-prof="{{ b.profesional_id }}" data-servicio="{{ b.turnos[0].servicio_id }}" data-inicio="{{ b.inicio }}"
+             style="--i:{{ (desde - apertura) / intervalo }}; --n:{{ (hasta - desde) / intervalo }}; --carril:{{ b.carril }}; --carriles:{{ b.carriles }}; --fondo:{{ b.fondo }}; --borde:{{ b.borde }};">
+            {% if b.cupo > 1 %}
+            <div class="bloque-cab" title="{{ b.servicio_nombre }} · {{ b.profesional_nombre }}">
+                {{ b.inicio|hhmm }} · {{ b.turnos|length }}/{{ b.cupo }}{% if multi %} · {{ b.profesional_nombre[:2]|upper }}{% endif %} · {{ b.servicio_nombre }}
+            </div>
+            <div class="chips">
+            {% endif %}
+            {% for t in b.turnos %}
+            <div class="chip" draggable="true"
+                 data-id="{{ t.id }}" data-tipo="{{ t.tipo }}" data-fecha="{{ t.fecha_turno }}" data-dia="{{ dias[d] }}"
+                 data-inicio="{{ t.inicio }}" data-dur="{{ t.duracion }}"
+                 data-cliente="{{ t.cliente_id }}" data-prof="{{ t.profesional_id }}" data-prof-nombre="{{ t.profesional_nombre }}"
+                 data-servicio="{{ t.servicio_nombre }}"
+                 data-nombre="{{ t.apellido ~ ', ' if t.apellido }}{{ t.nombre }}" data-pila="{{ t.nombre.split(' ')[0] }}"
+                 data-tel="{{ t.telefono or '' }}" data-pend="{{ t.pend }}">
+                <div class="linea">
+                    {% if t.tipo == 'fijo' %}<i class="fas fa-thumbtack ico" title="Turno fijo semanal"></i>{% endif %}
+                    {% if t.recupera_falta_id %}<i class="fas fa-redo ico" title="Recuperación"></i>{% endif %}
+                    <span class="nom">{{ t.apellido ~ ' ' if t.apellido }}{{ t.nombre if not t.apellido else t.nombre[:1] ~ '.' }}</span>
+                    {% if t.pend %}<span class="pend" title="Turnos por recuperar">↺{{ t.pend }}</span>{% endif %}
+                    {% if multi and b.cupo == 1 %}<span class="ini">{{ t.profesional_nombre[:2]|upper }}</span>{% endif %}
+                </div>
+                {% if b.cupo == 1 %}<div class="det">{{ t.inicio|hhmm }}–{{ (t.inicio + t.duracion)|hhmm }} · {{ t.servicio_nombre }}</div>{% endif %}
+            </div>
+            {% endfor %}
+            {% if b.cupo > 1 %}</div>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+
+<div class="leyenda">
+    <span><i class="fas fa-thumbtack me-1"></i>Turno fijo semanal</span>
+    <span><i class="fas fa-redo me-1" style="color:var(--accent)"></i>Recuperación · <b style="color:#B85C00">↺1</b> turnos por recuperar</span>
+    <span><i class="fas fa-hand-pointer me-1"></i>Tocá o arrastrá un turno para moverlo · tocá un horario libre para agendar</span>
+    <a href="{{ url_for('ayuda') }}#mover" style="color:var(--brand); font-weight:600;"><i class="fas fa-question-circle me-1"></i>¿Cómo se usa?</a>
+</div>
+
+<!-- ── BARRA DE ACCIONES ── -->
+<div class="barra" id="barra" hidden>
+    <div class="barra-info">
+        <div class="barra-nombre" id="bNombre"></div>
+        <div class="barra-det" id="bDet"></div>
+    </div>
+    <div class="barra-hint"><i class="fas fa-arrows-alt me-1"></i><span id="bHint">Tocá otro horario (o arrastrá) para moverlo</span></div>
+    <div class="barra-acc">
+        <button type="button" class="bb recup" id="bRecuperar" hidden><i class="fas fa-redo"></i>Recuperar</button>
+        <a class="bb" id="bFicha" href="#"><i class="fas fa-id-card"></i>Ficha</a>
+        <a class="bb" id="bTel" href="#"><i class="fas fa-phone"></i>Llamar</a>
+        <a class="bb wsp" id="bWsp" href="#" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i>WhatsApp</a>
+        <button type="button" class="bb rojo" id="bQuitar"><i class="fas fa-trash-alt"></i>Quitar</button>
+        <button type="button" class="bb cerrar" id="bCerrar" title="Cancelar (Esc)"><i class="fas fa-times"></i></button>
+    </div>
+</div>
+
+<!-- ── MODAL: confirmar / ¿solo esta semana o siempre? ── -->
+<div class="modal fade" id="modalModo" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold" id="mmTitulo"></h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3" style="font-size:0.88rem;" id="mmTexto"></p>
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn-brand py-2" id="mmSemana" data-modo="semana"></button>
+                    <button type="button" class="btn-ghost py-2" id="mmSiempre" data-modo="siempre"></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── MODAL: TURNOS POR RECUPERAR ── -->
+<div class="modal fade" id="modalRecuperar" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold"><i class="fas fa-redo me-2"></i>Turnos por recuperar</h6>
+                <a href="{{ url_for('ayuda') }}#recuperar" class="ms-auto me-3" style="color:rgba(255,255,255,0.7);" title="¿Cómo funciona?"><i class="fas fa-question-circle"></i></a>
+                <button type="button" class="btn-close ms-0" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                {% for f in pendientes %}
+                <div class="falta-row">
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:600;">{{ f.apellido ~ ', ' if f.apellido }}{{ f.nombre }}</div>
+                        <div class="falta-det" data-falta-det="{{ f.id }}"></div>
+                        <div style="font-size:0.72rem; color:var(--mid);">
+                            <button type="button" class="link-chico" data-descartar="{{ f.id }}">No lo recupera</button> &middot;
+                            <button type="button" class="link-chico" data-anular="{{ f.id }}">Fue un error, no faltó</button>
+                        </div>
+                    </div>
+                    <button type="button" class="btn-brand flex-shrink-0" data-recuperar="{{ f.id }}"><i class="fas fa-calendar-plus me-1"></i>Agendar</button>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── MODAL: AVISAR POR WHATSAPP ── -->
+<div class="modal fade" id="modalAviso" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold"><i class="fas fa-check-circle me-2" style="color:var(--brand-light)"></i><span id="avTitulo"></span></h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="small">Mensaje para el cliente</label>
+                <textarea class="form-control mb-2" id="avTexto" rows="5" style="font-size:0.85rem;"></textarea>
+                <div class="mb-3" style="font-size:0.75rem; color:var(--mid);" id="avNota"></div>
+                <div class="d-grid gap-2">
+                    <a class="btn-wsp py-2" id="avEnviar" href="#" target="_blank" rel="noopener"><i class="fab fa-whatsapp me-1"></i><span id="avBoton"></span></a>
+                    <button type="button" class="btn-ghost py-2" data-bs-dismiss="modal">No avisar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── MODAL: NUEVO TURNO ── -->
+<div class="modal fade" id="modalTurno" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <form action="{{ url_for('agregar_turno') }}" method="POST">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <input type="hidden" name="fecha_ref" value="{{ fechas[0].isoformat() }}">
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="fas fa-calendar-plus me-2"></i>Nuevo turno</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="mb-3">
+                        <label class="small">Cliente *</label>
+                        <select name="cliente_id" id="ntCliente" class="form-select" required>
+                            <option value="">— Elegir —</option>
+                            <option value="nuevo">＋ Cliente nuevo</option>
+                            {% for c in clientes %}
+                            <option value="{{ c.id }}">{{ c.apellido ~ ', ' if c.apellido }}{{ c.nombre }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="row g-2 mb-3" id="ntNuevo" hidden>
+                        <div class="col-6"><input type="text" name="nuevo_nombre" class="form-control" placeholder="Nombre *"></div>
+                        <div class="col-6"><input type="text" name="nuevo_apellido" class="form-control" placeholder="Apellido"></div>
+                        <div class="col-12"><input type="tel" name="nuevo_telefono" class="form-control" placeholder="Celular con código de área (ej. 11 4408-1508)"></div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="small">Servicio *</label>
+                        <select name="servicio_id" id="ntServicio" class="form-select" required>
+                            {% for s in servicios %}
+                            <option value="{{ s.id }}">{{ s.nombre }} · {{ s.duracion }} min{% if s.cupo > 1 %} · hasta {{ s.cupo }}{% endif %}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    {% if es_admin %}
+                    <div class="mb-3">
+                        <label class="small">Profesional *</label>
+                        <select name="profesional_id" id="ntProf" class="form-select" required>
+                            {% for p in profesionales %}
+                            <option value="{{ p.id }}" {% if p.id == mi_profesional_id %}selected{% endif %}>{{ p.nombre }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% endif %}
+
+                    <div class="mb-3">
+                        <label class="small">¿Se repite?</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="tipo" id="tipo_puntual" value="puntual" checked>
+                                <label class="form-check-label" for="tipo_puntual" style="font-size:0.85rem;">Una sola vez</label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="tipo" id="tipo_fijo" value="fijo">
+                                <label class="form-check-label" for="tipo_fijo" style="font-size:0.85rem;">Todas las semanas</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-7" id="campoFecha">
+                            <label class="small">Fecha</label>
+                            <input type="date" name="fecha" id="ntFecha" class="form-control" value="{{ (hoy if fechas[0] <= hoy <= fechas[6] else fechas[0]).isoformat() }}">
+                        </div>
+                        <div class="col-7" id="campoDia" hidden>
+                            <label class="small">Día</label>
+                            <select name="dia_semana" id="ntDia" class="form-select">
+                                {% for d in dias_vis %}<option value="{{ d }}">{{ dias[d] }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-5">
+                            <label class="small">Hora</label>
+                            <select name="inicio" id="ntHora" class="form-select">
+                                {% for m in range(apertura, cierre, intervalo) %}<option value="{{ m }}">{{ m|hhmm }}</option>{% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-ghost" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn-brand"><i class="fas fa-check me-1"></i>Agendar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    const CSRF      = document.querySelector('meta[name="csrf-token"]').content;
+    const MULTI     = {{ 'true' if multi else 'false' }};
+    const APERTURA  = {{ apertura }};
+    const CIERRE    = {{ cierre }};
+    const INTERVALO = {{ intervalo }};
+    const DIAS      = {{ dias|tojson }};
+    const DIAS_VIS  = {{ dias_vis|tojson }};
+    const HOY_D     = {{ hoy.weekday() if fechas[0] <= hoy <= fechas[6] and hoy.weekday() in dias_vis else dias_vis[0] }};
+    const PENDIENTES = {{ pendientes|tojson }};
+    const NEGOCIO   = {{ session.get('negocio_nombre', '')|tojson }};
+    const agenda = document.getElementById('agenda');
+    const barra  = document.getElementById('barra');
+    const tabs   = [...document.querySelectorAll('.tab-dia')];
+    const cols   = [...agenda.querySelectorAll('.col')];
+    let sel = null;            // turno seleccionado (chip)
+    let recuperando = null;    // falta que se está por recuperar
+    let filtroProf = '';
+
+    // ── utilidades ──
+    const ddmm  = iso => iso.slice(8, 10) + '/' + iso.slice(5, 7);
+    const hhmm  = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+    const diaDe = iso => DIAS[(new Date(iso + 'T12:00:00').getDay() + 6) % 7];
+    const cuando = (dia, fecha, inicio) => `${dia.toLowerCase()} ${ddmm(fecha)} a las ${hhmm(+inicio)}`;
+    const firma = NEGOCIO ? `\n\n${NEGOCIO}` : '';
+
+    function aviso(msg, tipo = 'danger') {
+        let zona = document.querySelector('.toast-zona');
+        if (!zona) { zona = document.createElement('div'); zona.className = 'toast-zona'; document.body.appendChild(zona); }
+        const div = document.createElement('div');
+        div.className = `alert alert-${tipo} alert-custom shadow mb-2`;
+        div.textContent = msg;
+        zona.appendChild(div);
+        setTimeout(() => div.remove(), 4500);
+    }
+
+    async function post(url, body) {
+        try {
+            const r = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF },
+                body: JSON.stringify(body)
+            });
+            if (r.status === 401) { location.reload(); return { ok: false }; }
+            return await r.json();
+        } catch (e) {
+            return { ok: false, error: 'No se pudo conectar. Revisá la conexión.' };
+        }
+    }
+
+    // ── WhatsApp ──
+    function telWsp(tel) {   // celular argentino → 549 + área + número
+        let n = (tel || '').replace(/\D/g, '');
+        if (n.startsWith('54')) { n = n.slice(2); if (n.startsWith('9')) n = n.slice(1); }
+        n = n.replace(/^0/, '');
+        if (n.length === 12) {
+            for (const i of [2, 3, 4]) { if (n.substr(i, 2) === '15') { n = n.slice(0, i) + n.slice(i + 2); break; } }
+        }
+        return n.length === 10 ? '549' + n : '';
+    }
+    const linkWsp = (tel, texto) => `https://wa.me/${telWsp(tel)}?text=${encodeURIComponent(texto)}`;
+
+    // ── estado entre recargas ──
+    function guardarEstado() {
+        try { sessionStorage.setItem('agenda', JSON.stringify({ url: location.href, d: agenda.dataset.d, y: window.scrollY })); } catch (e) {}
+    }
+    function recargar() { guardarEstado(); location.reload(); }
+
+    // ── días (celular) ──
+    function elegirDia(d) {
+        agenda.dataset.d = d;
+        tabs.forEach(t => t.classList.toggle('activo', t.dataset.d == d));
+    }
+    tabs.forEach(t => t.addEventListener('click', () => elegirDia(t.dataset.d)));
+
+    // ── filtro por profesional ──
+    function aplicarFiltro(id) {
+        filtroProf = id;
+        agenda.querySelectorAll('.bloque').forEach(b => b.classList.toggle('oculto', !!id && b.dataset.prof !== id));
+        document.querySelectorAll('#filtroProf .pastilla').forEach(b => b.classList.toggle('activa', b.dataset.prof === id));
+        if (sel && sel.closest('.bloque.oculto')) deseleccionar();
+        try { localStorage.setItem('agendaFiltroProf', id); } catch (e) {}
+        contarPorDia();
+    }
+    document.querySelectorAll('#filtroProf .pastilla').forEach(b => b.addEventListener('click', () => aplicarFiltro(b.dataset.prof)));
+
+    function contarPorDia() {
+        document.querySelectorAll('[data-cnt]').forEach(s => {
+            const n = agenda.querySelectorAll(`.col.d${s.dataset.cnt} .bloque:not(.oculto) .chip`).length;
+            s.textContent = n ? `${n} turno${n === 1 ? '' : 's'}` : '—';
+        });
+    }
+
+    // ── posición → horario ──
+    const fila = () => parseFloat(getComputedStyle(agenda).getPropertyValue('--fila'));
+    function slotEn(col, clientY) {
+        const y = clientY - col.getBoundingClientRect().top;
+        return Math.min(CIERRE - INTERVALO, APERTURA + Math.max(0, Math.floor(y / fila())) * INTERVALO);
+    }
+
+    // Fantasma: vista previa de dónde cae el turno
+    const fantasma = document.createElement('div');
+    fantasma.className = 'fantasma';
+    fantasma.hidden = true;
+    function mostrarFantasma(col, inicio) {
+        const dur = sel ? +sel.dataset.dur : recuperando ? recuperando.duracion : INTERVALO;
+        if (fantasma.parentElement !== col) col.appendChild(fantasma);
+        fantasma.style.top = ((inicio - APERTURA) / INTERVALO * fila()) + 'px';
+        fantasma.style.height = (Math.max(dur, INTERVALO) / INTERVALO * fila() - 2) + 'px';
+        fantasma.textContent = `${col.dataset.dia.slice(0, 3)} ${hhmm(inicio)}`;
+        fantasma.hidden = false;
+    }
+    const ocultarFantasma = () => { fantasma.hidden = true; };
+
+    // ── selección ──
+    function seleccionar(chip) {
+        if (recuperando) return;
+        if (sel) sel.classList.remove('sel');
+        sel = chip;
+        chip.classList.add('sel');
+        agenda.classList.add('moviendo');
+        const d = chip.dataset;
+        document.getElementById('bNombre').textContent = d.nombre;
+        const partes = [
+            d.servicio,
+            d.tipo === 'fijo' ? `todos los ${d.dia.toLowerCase()} ${hhmm(+d.inicio)}` : `${d.dia.toLowerCase()} ${ddmm(d.fecha)} ${hhmm(+d.inicio)}`,
+            `${d.dur} min`
+        ];
+        if (MULTI) partes.push(d.profNombre);
+        document.getElementById('bDet').textContent = partes.join(' · ');
+        document.getElementById('bFicha').href = `{{ url_for('clientes') }}#cliente-${d.cliente}`;
+        const tel = document.getElementById('bTel');
+        tel.hidden = !d.tel;
+        tel.href = d.tel ? 'tel:' + d.tel.replace(/[^\d+]/g, '') : '#';
+        document.getElementById('bWsp').href = linkWsp(d.tel,
+            `¡Hola ${d.pila}! Te recuerdo tu turno de ${d.servicio} del ${cuando(d.dia, d.fecha, d.inicio)}. ¡Te esperamos!` + firma);
+        const bRec = document.getElementById('bRecuperar');
+        bRec.hidden = d.pend === '0';
+        bRec.lastChild.textContent = d.pend > 1 ? `Recuperar (${d.pend})` : 'Recuperar';
+        barra.hidden = false;
+        document.body.classList.add('con-barra');
+    }
+
+    function deseleccionar() {
+        if (sel) sel.classList.remove('sel');
+        sel = null;
+        agenda.classList.remove('moviendo');
+        ocultarFantasma();
+        barra.hidden = true;
+        document.body.classList.remove('con-barra');
+    }
+
+    // ── recuperar ──
+    const HINT_MOVER = document.getElementById('bHint').textContent;
+
+    function iniciarRecuperar(f) {
+        deseleccionar();
+        recuperando = f;
+        try { sessionStorage.setItem('recuperando', JSON.stringify({ id: f.id })); } catch (e) {}
+        agenda.classList.add('moviendo');
+        barra.classList.add('recuperando');
+        document.getElementById('bNombre').textContent = `Recuperar: ${f.apellido ? f.apellido + ', ' : ''}${f.nombre}`;
+        document.getElementById('bDet').textContent =
+            `${f.servicio_nombre} (${f.duracion} min) · faltó el ${cuando(diaDe(f.fecha), f.fecha, f.inicio)}` + (MULTI ? ` · ${f.profesional_nombre}` : '');
+        document.getElementById('bHint').textContent = 'Tocá el horario donde recupera. Para otra semana, usá las flechas ‹ ›';
+        barra.hidden = false;
+        document.body.classList.add('con-barra');
+    }
+
+    function cancelarRecuperar() {
+        recuperando = null;
+        try { sessionStorage.removeItem('recuperando'); } catch (e) {}
+        barra.classList.remove('recuperando');
+        document.getElementById('bHint').textContent = HINT_MOVER;
+        deseleccionar();
+    }
+
+    async function recuperarEn(col, inicio) {
+        const f = recuperando;
+        const c = col.dataset;
+        const r = await post('{{ url_for("recuperar") }}', { falta_id: f.id, fecha: c.fecha, inicio });
+        if (!r.ok) { if (r.error) aviso(r.error); return; }
+        cancelarRecuperar();
+        const pila = f.nombre.split(' ')[0];
+        avisar('Recuperación agendada', { tel: f.telefono || '', pila },
+            `¡Hola ${pila}! Te confirmo la recuperación de tu turno de ${f.servicio_nombre} del ${cuando(diaDe(f.fecha), f.fecha, f.inicio)}: te esperamos el ${cuando(c.dia, c.fecha, inicio)}.`);
+    }
+
+    document.getElementById('bRecuperar').addEventListener('click', () => {
+        const f = sel && PENDIENTES.find(p => String(p.cliente_id) === sel.dataset.cliente);
+        if (f) iniciarRecuperar(f);
+    });
+
+    const modalRecuperar = document.getElementById('modalRecuperar');
+    modalRecuperar.querySelectorAll('[data-falta-det]').forEach(el => {
+        const f = PENDIENTES.find(p => p.id == el.dataset.faltaDet);
+        el.textContent = `${f.servicio_nombre} · faltó el ${cuando(diaDe(f.fecha), f.fecha, f.inicio)}` + (MULTI ? ` · ${f.profesional_nombre}` : '');
+    });
+    modalRecuperar.addEventListener('click', async e => {
+        const b = e.target.closest('button');
+        if (!b) return;
+        if (b.dataset.recuperar) {
+            bootstrap.Modal.getInstance(modalRecuperar).hide();
+            iniciarRecuperar(PENDIENTES.find(p => p.id == b.dataset.recuperar));
+        } else if (b.dataset.descartar) {
+            if (!confirm('¿Sacar este turno de la lista? No se va a recuperar.')) return;
+            const r = await post('{{ url_for("descartar_falta") }}', { falta_id: +b.dataset.descartar });
+            if (r.ok) recargar(); else if (r.error) aviso(r.error);
+        } else if (b.dataset.anular) {
+            if (!confirm('¿Anular la falta? El cliente vuelve a tener ese turno en la agenda.')) return;
+            const r = await post('{{ url_for("anular_falta") }}', { falta_id: +b.dataset.anular });
+            if (r.ok) recargar(); else if (r.error) aviso(r.error);
+        }
+    });
+
+    const cerrarBarra = () => recuperando ? cancelarRecuperar() : deseleccionar();
+    document.getElementById('bCerrar').addEventListener('click', cerrarBarra);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarBarra(); });
+    document.addEventListener('click', e => {
+        if (sel && !e.target.closest('.agenda, .barra, .modal, .tabs-dias, .toolbar, .filtro-prof')) deseleccionar();
+    });
+
+    // ── pregunta de confirmación ──
+    const modalModo = new bootstrap.Modal(document.getElementById('modalModo'));
+    function preguntar({ titulo, texto, semana, siempre }) {
+        return new Promise(resolve => {
+            let respuesta = null;
+            document.getElementById('mmTitulo').textContent = titulo;
+            document.getElementById('mmTexto').textContent = texto;
+            const bS = document.getElementById('mmSemana');
+            const bA = document.getElementById('mmSiempre');
+            bS.hidden = !semana; bS.textContent = semana || '';
+            bA.textContent = siempre;
+            bA.className = semana ? 'btn-ghost py-2' : 'btn-brand py-2';
+            const elegir = e => { respuesta = e.currentTarget.dataset.modo; modalModo.hide(); };
+            bS.onclick = elegir; bA.onclick = elegir;
+            document.getElementById('modalModo').addEventListener('hidden.bs.modal', () => resolve(respuesta), { once: true });
+            modalModo.show();
+        });
+    }
+
+    // ── aviso al cliente ──
+    const modalAviso = new bootstrap.Modal(document.getElementById('modalAviso'));
+    const avTexto  = document.getElementById('avTexto');
+    const avEnviar = document.getElementById('avEnviar');
+    let avTel = '';
+    const actualizarLinkAviso = () => { avEnviar.href = linkWsp(avTel, avTexto.value); };
+    avTexto.addEventListener('input', actualizarLinkAviso);
+    avEnviar.addEventListener('click', () => setTimeout(() => modalAviso.hide(), 300));
+    document.getElementById('modalAviso').addEventListener('hidden.bs.modal', recargar);
+
+    function avisar(titulo, d, texto) {
+        avTel = d.tel;
+        const conTel = !!telWsp(d.tel);
+        document.getElementById('avTitulo').textContent = titulo;
+        avTexto.value = texto + firma;
+        document.getElementById('avBoton').textContent = conTel ? `Avisar a ${d.pila} por WhatsApp` : 'Elegir contacto en WhatsApp';
+        document.getElementById('avNota').textContent = conTel
+            ? `Se abre WhatsApp con el mensaje para ${d.tel}; solo tocás Enviar. Podés editar el texto antes.`
+            : `${d.pila} no tiene un celular con código de área cargado (ej. 11 4408-1508). Podés elegir el contacto en WhatsApp o completarlo en su ficha.`;
+        actualizarLinkAviso();
+        modalAviso.show();
+    }
+
+    // ── mover ──
+    async function moverA(col, inicio) {
+        const chip = sel;
+        if (!chip) return;
+        const d = { ...chip.dataset };
+        const c = col.dataset;
+        if (c.fecha === d.fecha && inicio === +d.inicio) { deseleccionar(); return; }
+        const destino = `${c.dia} ${ddmm(c.fecha)} ${hhmm(inicio)}`;
+        const texto = `${d.nombre} · ${d.servicio}: de ${d.dia} ${ddmm(d.fecha)} ${hhmm(+d.inicio)} a ${destino}`;
+        const body = { id: d.id, fecha: c.fecha, inicio, fecha_origen: d.fecha };
+        const modo = await preguntar(d.tipo === 'fijo' ? {
+            titulo: 'Mover turno fijo', texto,
+            semana: `Solo esta semana (${ddmm(c.fecha)})`,
+            siempre: `Todas las semanas → ${c.dia} ${hhmm(inicio)}`
+        } : { titulo: 'Mover turno', texto, siempre: 'Mover' });
+        if (!modo) return;
+        body.modo = modo;
+
+        const r = await post('{{ url_for("mover_turno") }}', body);
+        if (!r.ok) { if (r.error) aviso(r.error); return; }
+        deseleccionar();
+        const msg = (d.tipo === 'fijo' && modo === 'siempre')
+            ? `¡Hola ${d.pila}! Te aviso que tu turno fijo de ${d.servicio} de los ${d.dia.toLowerCase()} a las ${hhmm(+d.inicio)} pasa a los ${c.dia.toLowerCase()} a las ${hhmm(inicio)}, a partir de esta semana.`
+            : `¡Hola ${d.pila}! Te aviso que tu turno de ${d.servicio} del ${cuando(d.dia, d.fecha, d.inicio)} pasa al ${cuando(c.dia, c.fecha, inicio)}.`
+              + (d.tipo === 'fijo' ? ' Las semanas siguientes seguís en tu horario de siempre.' : '');
+        avisar('Turno movido', d, msg);
+    }
+
+    // ── quitar ──
+    document.getElementById('bQuitar').addEventListener('click', async () => {
+        if (!sel) return;
+        const chip = sel;
+        const d = { ...chip.dataset };
+        const modo = await preguntar(d.tipo === 'fijo' ? {
+            titulo: 'Quitar turno', texto: `${d.nombre} · ${d.servicio} · ${d.dia} ${hhmm(+d.inicio)}`,
+            semana: `Solo esta semana (falta el ${ddmm(d.fecha)})`,
+            siempre: 'Quitar el turno fijo para siempre'
+        } : {
+            titulo: 'Quitar turno', texto: `${d.nombre} · ${d.servicio} · ${d.dia} ${ddmm(d.fecha)} ${hhmm(+d.inicio)}`,
+            siempre: 'Quitar turno'
+        });
+        if (!modo) return;
+        const r = await post('{{ url_for("quitar_turno") }}', { id: d.id, modo, fecha: d.fecha });
+        if (!r.ok) { if (r.error) aviso(r.error); return; }
+        chip.remove();
+        deseleccionar();
+        const msg = d.tipo !== 'fijo'
+            ? `¡Hola ${d.pila}! Te confirmo que se canceló tu turno de ${d.servicio} del ${cuando(d.dia, d.fecha, d.inicio)}.`
+            : modo === 'semana'
+                ? `¡Hola ${d.pila}! Te confirmo que esta semana no tenés tu turno de ${d.servicio} del ${cuando(d.dia, d.fecha, d.inicio)}. Te queda pendiente para recuperar: avisame qué día te queda bien.`
+                : `¡Hola ${d.pila}! Te confirmo que se dio de baja tu turno fijo de ${d.servicio} de los ${d.dia.toLowerCase()} a las ${hhmm(+d.inicio)}.`;
+        avisar('Turno quitado', d, msg);
+    });
+
+    // ── clicks y movimiento sobre la grilla ──
+    agenda.addEventListener('click', e => {
+        const col = e.target.closest('.col');
+        const chip = e.target.closest('.chip');
+        if (recuperando) {
+            if (col) recuperarEn(col, slotEn(col, e.clientY));
+            return;
+        }
+        if (chip) { if (sel === chip) deseleccionar(); else seleccionar(chip); return; }
+        if (!col) return;
+        if (sel) { moverA(col, slotEn(col, e.clientY)); return; }
+        // Sin selección: agendar en ese horario (sobre una clase grupal, con su servicio y profesional)
+        const bloque = e.target.closest('.bloque.grupal');
+        abrirNuevo(col, bloque ? +bloque.dataset.inicio : slotEn(col, e.clientY), bloque);
+    });
+
+    agenda.addEventListener('mousemove', e => {
+        const col = e.target.closest('.col');
+        if (col && (sel || recuperando)) mostrarFantasma(col, slotEn(col, e.clientY));
+        else ocultarFantasma();
+    });
+    agenda.addEventListener('mouseleave', ocultarFantasma);
+
+    // Arrastrar (compu)
+    agenda.addEventListener('dragstart', e => {
+        const chip = e.target.closest('.chip');
+        if (!chip || recuperando) { e.preventDefault(); return; }
+        seleccionar(chip);
+        chip.classList.add('arrastrando');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', chip.dataset.id);
+    });
+    agenda.addEventListener('dragend', () => {
+        agenda.querySelectorAll('.arrastrando').forEach(el => el.classList.remove('arrastrando'));
+    });
+    agenda.addEventListener('dragover', e => {
+        const col = e.target.closest('.col');
+        if (!col || !sel) return;
+        e.preventDefault();
+        mostrarFantasma(col, slotEn(col, e.clientY));
+    });
+    agenda.addEventListener('drop', e => {
+        const col = e.target.closest('.col');
+        if (!col || !sel) return;
+        e.preventDefault();
+        ocultarFantasma();
+        moverA(col, slotEn(col, e.clientY));
+    });
+
+    // ── nuevo turno ──
+    const modalTurno = new bootstrap.Modal(document.getElementById('modalTurno'));
+    const tipoFijo = document.getElementById('tipo_fijo');
+    const ntCliente = document.getElementById('ntCliente');
+    function toggleTipo() {
+        document.getElementById('campoDia').hidden   = !tipoFijo.checked;
+        document.getElementById('campoFecha').hidden =  tipoFijo.checked;
+    }
+    document.querySelectorAll('input[name="tipo"]').forEach(r => r.addEventListener('change', toggleTipo));
+    ntCliente.addEventListener('change', () => {
+        const nuevo = ntCliente.value === 'nuevo';
+        document.getElementById('ntNuevo').hidden = !nuevo;
+        document.querySelector('[name="nuevo_nombre"]').required = nuevo;
+        if (nuevo) document.querySelector('[name="nuevo_nombre"]').focus();
+    });
+
+    window.abrirNuevo = function (col, inicio, bloque) {
+        if (col) {
+            document.getElementById('ntFecha').value = col.dataset.fecha;
+            document.getElementById('ntDia').value = col.dataset.d;
+            const hora = document.getElementById('ntHora');
+            if ([...hora.options].some(o => +o.value === inicio)) hora.value = inicio;
+        }
+        const prof = document.getElementById('ntProf');
+        if (bloque) {
+            document.getElementById('ntServicio').value = bloque.dataset.servicio;
+            if (prof) prof.value = bloque.dataset.prof;
+        } else if (prof && filtroProf) {
+            prof.value = filtroProf;
+        }
+        modalTurno.show();
+    };
+    document.getElementById('modalTurno').addEventListener('shown.bs.modal', () => ntCliente.focus());
+
+    // ── inicio ──
+    let estado = null;
+    try { estado = JSON.parse(sessionStorage.getItem('agenda') || 'null'); sessionStorage.removeItem('agenda'); } catch (e) {}
+    if (estado && estado.url === location.href && DIAS_VIS.includes(+estado.d)) {
+        elegirDia(estado.d);
+        window.scrollTo(0, estado.y || 0);
+    } else {
+        elegirDia(HOY_D);
+    }
+    let filtroGuardado = '';
+    try { filtroGuardado = localStorage.getItem('agendaFiltroProf') || ''; } catch (e) {}
+    if (MULTI && document.querySelector(`#filtroProf [data-prof="${CSS.escape(filtroGuardado)}"]`)) aplicarFiltro(filtroGuardado);
+    else contarPorDia();
+    let recGuardada = null;
+    try { recGuardada = JSON.parse(sessionStorage.getItem('recuperando') || 'null'); } catch (e) {}
+    if (recGuardada) {
+        const f = PENDIENTES.find(p => p.id === recGuardada.id);
+        if (f) iniciarRecuperar(f);
+        else try { sessionStorage.removeItem('recuperando'); } catch (e) {}
+    }
+})();
+</script>
+{% endblock %}

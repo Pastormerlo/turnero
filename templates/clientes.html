@@ -1,0 +1,168 @@
+{% extends 'layout.html' %}
+{% block title %}Clientes · {{ session.get('negocio_nombre', 'Turnero') }}{% endblock %}
+{% macro campos(c=None) %}
+<div class="row g-3">
+    <div class="col-md-6">
+        <label class="small">Nombre *</label>
+        <input type="text" name="nombre" class="form-control" value="{{ c.nombre if c else '' }}" required maxlength="60">
+    </div>
+    <div class="col-md-6">
+        <label class="small">Apellido</label>
+        <input type="text" name="apellido" class="form-control" value="{{ c.apellido if c else '' }}" maxlength="60">
+    </div>
+    <div class="col-md-6">
+        <label class="small">Celular</label>
+        <input type="tel" name="telefono" class="form-control" value="{{ (c.telefono or '') if c else '' }}"
+               placeholder="Con código de área, ej. 11 4408-1508" maxlength="30">
+    </div>
+    <div class="col-md-6">
+        <label class="small">Email</label>
+        <input type="email" name="email" class="form-control" value="{{ (c.email or '') if c else '' }}" maxlength="120">
+    </div>
+    <div class="col-12">
+        <label class="small">Notas</label>
+        <textarea name="notas" class="form-control" rows="3" maxlength="2000"
+                  placeholder="Preferencias, indicaciones, lo que te sirva recordar">{{ (c.notas or '') if c else '' }}</textarea>
+    </div>
+</div>
+{% endmacro %}
+
+{% block content %}
+<style>
+    .cliente-card {
+        background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow);
+        padding: 0.9rem 1.1rem; display: flex; align-items: center; gap: 1rem; margin-bottom: 0.6rem;
+    }
+    .avatar {
+        width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+        background: var(--brand-pale); color: var(--brand);
+        display: flex; align-items: center; justify-content: center; font-weight: 600;
+    }
+    .cliente-nombre { font-weight: 600; font-size: 0.92rem; }
+    .cliente-sub { font-size: 0.78rem; color: var(--mid); }
+    .tag {
+        display: inline-block; background: var(--brand-pale); color: var(--brand);
+        border-radius: 6px; padding: 1px 6px; font-size: 0.7rem; font-weight: 600; margin: 3px 2px 0 0;
+    }
+    .tag.prox { background: #E8F1FB; color: #1F5F99; }
+    .tag.pend { background: #FFF0DC; color: #B85C00; }
+    .btn-accion {
+        width: 32px; height: 32px; border-radius: 8px; border: none; cursor: pointer;
+        display: flex; align-items: center; justify-content: center; font-size: 0.8rem; text-decoration: none;
+    }
+    .btn-editar { background: #E8F4FD; color: #2980B9; }
+    .btn-wsp { background: #E3F8EA; color: #1E9E4A; }
+    .btn-borrar { background: #FFE5E5; color: #C0392B; }
+    .buscar { position: relative; }
+    .buscar i { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--mid); font-size: 0.85rem; }
+    .buscar input { padding-left: 36px; }
+</style>
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div>
+        <h4 class="mb-0" style="font-family:'DM Serif Display',serif;">Clientes</h4>
+        <span class="text-muted" style="font-size:0.8rem;">
+            {{ clientes|length }} cliente{{ 's' if clientes|length != 1 }}{% if buscar %} · búsqueda: "<strong>{{ buscar }}</strong>"{% endif %}
+        </span>
+    </div>
+    <button class="btn-brand" data-bs-toggle="modal" data-bs-target="#modal-nuevo"><i class="fas fa-user-plus me-1"></i> Nuevo cliente</button>
+</div>
+
+<div class="buscar mb-3">
+    <i class="fas fa-search"></i>
+    <form method="GET" action="{{ url_for('clientes') }}">
+        <input type="search" name="q" class="form-control" placeholder="Buscar por nombre, apellido o celular..." value="{{ buscar }}">
+    </form>
+</div>
+
+{% for c in clientes %}
+<div class="cliente-card">
+    <div class="avatar">{{ c.nombre[:1]|upper }}{{ c.apellido[:1]|upper }}</div>
+    <div style="flex:1; min-width:0;">
+        <div class="cliente-nombre">{{ c.apellido ~ ', ' if c.apellido }}{{ c.nombre }}</div>
+        <div class="cliente-sub">
+            {% if c.telefono %}<i class="fas fa-phone me-1"></i>{{ c.telefono }}{% else %}Sin celular cargado{% endif %}
+        </div>
+        <div>
+            {% for f in fijos.get(c.id, []) %}<span class="tag"><i class="fas fa-thumbtack me-1"></i>{{ f }}</span>{% endfor %}
+            {% if proximos.get(c.id) %}<span class="tag prox"><i class="far fa-calendar me-1"></i>{{ proximos[c.id] }}</span>{% endif %}
+            {% if por_recuperar.get(c.id) %}<span class="tag pend"><i class="fas fa-redo me-1"></i>{{ por_recuperar[c.id] }} por recuperar</span>{% endif %}
+        </div>
+    </div>
+    <div class="d-flex gap-1 align-items-center flex-shrink-0">
+        <button class="btn-accion btn-editar" data-bs-toggle="modal" data-bs-target="#cliente-{{ c.id }}" title="Ver / editar"><i class="fas fa-edit"></i></button>
+        <form action="{{ url_for('baja_cliente', cid=c.id) }}" method="POST" class="m-0"
+              data-confirmar="¿Dar de baja a {{ c.nombre }} {{ c.apellido }}? Se liberan sus turnos.">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <button class="btn-accion btn-borrar" title="Dar de baja"><i class="fas fa-trash"></i></button>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="cliente-{{ c.id }}" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <form action="{{ url_for('editar_cliente', cid=c.id) }}" method="POST">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="fas fa-user-edit me-2"></i>{{ c.apellido ~ ', ' if c.apellido }}{{ c.nombre }}</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">{{ campos(c) }}</div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-ghost" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn-brand"><i class="fas fa-save me-1"></i> Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% else %}
+<div class="card">
+    <div class="card-body text-center py-5 text-muted">
+        <i class="fas fa-users fa-2x mb-2 d-block"></i>
+        {% if buscar %}
+            No se encontraron clientes con "<strong>{{ buscar }}</strong>".
+            <div class="mt-2"><a href="{{ url_for('clientes') }}" class="btn-ghost">Ver todos</a></div>
+        {% else %}
+            Todavía no hay clientes. Podés cargarlos acá o directamente al agendar un turno.
+            <div class="mt-3"><button class="btn-brand" data-bs-toggle="modal" data-bs-target="#modal-nuevo">Agregar el primero</button></div>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+
+<div class="modal fade" id="modal-nuevo" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <form action="{{ url_for('agregar_cliente') }}" method="POST">
+                <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h6 class="modal-title fw-bold"><i class="fas fa-user-plus me-2"></i>Nuevo cliente</h6>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">{{ campos() }}</div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-ghost" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="btn-brand"><i class="fas fa-user-plus me-1"></i> Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll('form[data-confirmar]').forEach(f =>
+    f.addEventListener('submit', e => { if (!confirm(f.dataset.confirmar)) e.preventDefault(); }));
+
+// Abrir un cliente directo desde la agenda: /clientes#cliente-12  (o #nuevo)
+const hash = location.hash.slice(1);
+const destino = hash === 'nuevo' ? 'modal-nuevo' : hash;
+if (/^(cliente-\d+|modal-nuevo)$/.test(destino) && document.getElementById(destino)) {
+    new bootstrap.Modal(document.getElementById(destino)).show();
+    history.replaceState(null, '', location.pathname + location.search);
+}
+</script>
+{% endblock %}
