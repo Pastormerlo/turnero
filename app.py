@@ -7,7 +7,7 @@ from flask import (
     url_for, session, jsonify, g, flash
 )
 from functools import wraps
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
@@ -51,7 +51,7 @@ app.config.update(
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-VERSION    = '1.0'
+VERSION    = '1.1'
 DIAS       = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 DIAS_CORTO = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 DURACIONES = [15, 20, 30, 40, 45, 60, 75, 90, 120, 150, 180, 240]
@@ -64,6 +64,19 @@ COLORES = {
     'rosa':    ('#FCE4EC', '#AD2B5E'),
     'gris':    ('#ECEFF1', '#455A64'),
 }
+
+
+# El servidor puede estar en otro huso (PythonAnywhere usa UTC): "hoy" y "ahora" se
+# calculan siempre en la hora local del negocio. Argentina = UTC-3, sin horario de verano.
+HUSO = timezone(timedelta(hours=int(os.environ.get('UTC_OFFSET', '-3'))))
+
+
+def ahora():
+    return datetime.now(HUSO)
+
+
+def hoy():
+    return ahora().date()
 
 
 def hhmm(minutos):
@@ -634,6 +647,67 @@ def ubicar_en_carriles(bloques):
     return bloques
 
 
+def turnos_del_dia(fecha):
+    """Turnos que ocurren en una fecha, con cliente, servicio y profesional, ordenados por hora."""
+    return query(
+        f"""SELECT t.id, t.tipo, t.inicio, t.duracion, t.recupera_falta_id, t.cliente_id, t.profesional_id,
+                   c.nombre, c.apellido, c.telefono, c.creado_en,
+                   s.nombre AS servicio_nombre, p.nombre AS profesional_nombre
+            FROM turnos t
+            JOIN clientes c ON c.id = t.cliente_id
+            JOIN servicios s ON s.id = t.servicio_id
+            JOIN profesionales p ON p.id = t.profesional_id
+            WHERE t.negocio_id=? AND c.activo=1
+              AND ((t.tipo='puntual' AND t.fecha=?)
+                   OR (t.tipo='fijo' AND t.dia_semana=? AND NOT EXISTS (
+                          SELECT 1 FROM turnos_excepciones e WHERE e.turno_id=t.id AND e.fecha=?)))
+              {'' if es_admin() else 'AND t.profesional_id=?'}
+            ORDER BY t.inicio, c.apellido, c.nombre""",
+        (negocio_id(), fecha.isoformat(), fecha.weekday(), fecha.isoformat())
+        + (() if es_admin() else (profesional_id(),))
+    )
+
+
+def armar_resumen(momento):
+    """Resumen de hoy y lista del próximo día de atención (para mandar recordatorios)."""
+    neg = get_negocio()
+    hoy_f = momento.date()
+    min_ahora = momento.hour * 60 + momento.minute
+    lista = [dict(t) for t in turnos_del_dia(hoy_f)]
+
+    nuevos_desde = (hoy_f - timedelta(days=14)).isoformat()
+    por_prof = {}
+    for t in lista:
+        por_prof[t['profesional_nombre']] = por_prof.get(t['profesional_nombre'], 0) + 1
+    proximo = next((t for t in lista if t['inicio'] + t['duracion'] > min_ahora), None)
+    faltas = query(
+        f"""SELECT c.nombre, c.apellido FROM faltas f JOIN clientes c ON c.id = f.cliente_id
+            WHERE f.negocio_id=? AND f.fecha=? {'' if es_admin() else 'AND f.profesional_id=?'}
+            ORDER BY f.inicio""",
+        (negocio_id(), hoy_f.isoformat()) + (() if es_admin() else (profesional_id(),))
+    )
+
+    # Próximo día que el negocio atiende (para los recordatorios)
+    siguiente = next((hoy_f + timedelta(days=i) for i in range(1, 8)
+                      if (hoy_f + timedelta(days=i)).weekday() in neg['dias_lista']), None)
+
+    return {
+        'fecha': hoy_f,
+        'abierto': hoy_f.weekday() in neg['dias_lista'],
+        'total': len(lista),
+        'por_prof': sorted(por_prof.items()) if len(por_prof) > 1 else [],
+        'quedan': sum(1 for t in lista if t['inicio'] >= min_ahora),
+        'proximo': proximo,
+        'en_curso': bool(proximo and proximo['inicio'] <= min_ahora),
+        'nuevos': [t for t in lista if (t['creado_en'] or '')[:10] >= nuevos_desde],
+        'recuperaciones': sum(1 for t in lista if t['recupera_falta_id']),
+        'faltas': faltas,
+        'siguiente': siguiente,
+        'siguiente_es_manana': siguiente == hoy_f + timedelta(days=1) if siguiente else False,
+        'siguiente_turnos': [dict(t) for t in turnos_del_dia(siguiente)] if siguiente else [],
+    }
+
+
 @app.route('/')
 @app.route('/agenda')
 @login_required
@@ -641,9 +715,10 @@ def agenda():
     nid = negocio_id()
     pid = profesional_id()
     neg = get_negocio()
-    hoy = date.today()
+    momento = ahora()
+    dia_hoy = momento.date()
 
-    fecha_ref = parse_fecha(request.args.get('fecha')) or hoy
+    fecha_ref = parse_fecha(request.args.get('fecha')) or dia_hoy
     inicio_sem = fecha_ref - timedelta(days=fecha_ref.weekday())
     fechas = [inicio_sem + timedelta(days=i) for i in range(7)]
     dias_vis = [d for d in range(7) if d in neg['dias_lista']]
@@ -720,7 +795,8 @@ def agenda():
 
     return render_template('agenda.html',
         por_dia=por_dia, cantidad=cantidad,
-        dias_vis=dias_vis, fechas=fechas, hoy=hoy,
+        dias_vis=dias_vis, fechas=fechas, hoy=dia_hoy,
+        resumen=armar_resumen(momento) if fechas[0] <= dia_hoy <= fechas[6] else None,
         inicio=fechas[0], fin=fechas[dias_vis[-1]] if dias_vis else fechas[-1],
         dias=DIAS, dias_corto=DIAS_CORTO,
         apertura=apertura, cierre=cierre, intervalo=neg['intervalo'],
@@ -980,7 +1056,7 @@ def clientes():
     for t in query("""SELECT t.cliente_id, t.fecha, t.inicio, s.nombre AS servicio FROM turnos t
                       JOIN servicios s ON s.id = t.servicio_id
                       WHERE t.negocio_id=? AND t.tipo='puntual' AND t.fecha >= ?
-                      ORDER BY t.fecha, t.inicio""", (nid, date.today().isoformat())):
+                      ORDER BY t.fecha, t.inicio""", (nid, hoy().isoformat())):
         if t['cliente_id'] not in proximos:
             f = parse_fecha(t['fecha'])
             proximos[t['cliente_id']] = f"{DIAS_CORTO[f.weekday()]} {f.strftime('%d/%m')} {hhmm(t['inicio'])} · {t['servicio']}"

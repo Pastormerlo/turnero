@@ -132,6 +132,48 @@
     .falta-det { font-size: 0.78rem; color: var(--mid); }
     .link-chico { background: none; border: none; padding: 0; color: var(--mid); text-decoration: underline; font-size: 0.72rem; }
 
+    /* ── RESUMEN DEL DÍA ── */
+    .resumen { background: var(--white); border-radius: var(--radius); box-shadow: var(--shadow); margin-bottom: 0.75rem; overflow: hidden; }
+    .resumen-cab {
+        width: 100%; border: none; background: none; text-align: left; cursor: pointer;
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 0.65rem 1rem; font-size: 0.9rem; color: var(--dark);
+    }
+    .resumen-cab .fa-sun { color: var(--accent); }
+    .resumen-mini { font-size: 0.78rem; color: var(--mid); white-space: nowrap; }
+    .resumen-mini .flecha { transition: transform 0.2s; }
+    .resumen.plegado .resumen-cuerpo { display: none; }
+    .resumen.plegado .flecha { transform: rotate(-90deg); }
+    .resumen-cuerpo { display: flex; gap: 0.5rem; padding: 0 0.75rem 0.75rem; overflow-x: auto; }
+    .dato {
+        display: flex; align-items: center; gap: 0.6rem; flex-shrink: 0;
+        background: #F6F8F5; border-radius: 12px; padding: 0.5rem 0.8rem; min-height: 56px;
+        border: none; text-align: left; color: var(--dark);
+    }
+    .dato.ancho { min-width: 230px; }
+    .dato.boton { cursor: pointer; background: #E9F9EF; }
+    .dato.boton:hover { background: #D7F3E2; }
+    .dato.boton:disabled { cursor: default; background: #F6F8F5; color: var(--mid); }
+    .dato-num { font-size: 1.35rem; font-weight: 700; color: var(--brand); min-width: 26px; text-align: center; }
+    .dato-num.rojo { color: #C0392B; }
+    .dato-num.naranja { color: var(--accent); }
+    .dato-num.verde-wsp { color: #1EBE5A; }
+    .dato-txt { font-size: 0.8rem; line-height: 1.25; }
+    .dato-txt .sub { display: block; font-size: 0.72rem; color: var(--mid); }
+    .dato-txt .sub + .sub { display: inline; margin-right: 0.4rem; }
+    .dato-txt .etiqueta {
+        display: inline-block; font-size: 0.62rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+        background: var(--brand-pale); color: var(--brand); border-radius: 4px; padding: 0 4px; margin-right: 4px;
+    }
+    .recordar-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 1rem; border-top: 1px solid #F0F4EE; font-size: 0.88rem; }
+    .recordar-hora { font-weight: 700; color: var(--brand); min-width: 46px; }
+    .btn-enviar {
+        flex-shrink: 0; text-decoration: none; font-size: 0.8rem; font-weight: 600;
+        background: #25D366; color: #fff; border-radius: 8px; padding: 0.4rem 0.7rem; white-space: nowrap;
+    }
+    .btn-enviar:hover { background: #1EBE5A; color: #fff; }
+    .recordar-row.enviado .btn-enviar { background: var(--brand-pale); color: var(--brand); }
+
     /* ── PESTAÑAS DE DÍA (celular) ── */
     .tabs-dias { display: flex; gap: 4px; position: sticky; top: 0; z-index: 7; background: var(--bg); padding: 4px 0 8px; }
     .tab-dia {
@@ -147,6 +189,12 @@
 
     @media (min-width: 768px) { .tabs-dias { display: none; } }
     @media (max-width: 767px) {
+        .resumen-cuerpo { flex-wrap: wrap; overflow: visible; }
+        .resumen-cuerpo { gap: 0.4rem; }
+        .dato { flex: 1 1 calc(50% - 0.2rem); min-width: 0; min-height: 0; padding: 0.4rem 0.6rem; }
+        .dato.ancho { flex-basis: 100%; min-width: 0; order: -1; }
+        .dato.boton { flex-basis: 100%; order: 9; }
+        .dato-num { font-size: 1.15rem; }
         .rango { font-size: 1.05rem; }
         .agenda { grid-template-columns: 48px minmax(0, 1fr); --fila: {{ (fila * 1.25)|int }}px; }
         .cab { display: none; }
@@ -187,6 +235,112 @@
     <button type="button" class="pastilla activa" data-prof="">Todos</button>
     {% for p in profesionales %}<button type="button" class="pastilla" data-prof="{{ p.id }}">{{ p.nombre }}</button>{% endfor %}
 </div>
+{% endif %}
+
+{% if resumen %}
+{% set r = resumen %}
+<!-- ── RESUMEN DEL DÍA ── -->
+<div class="resumen" id="resumen" data-fecha="{{ r.fecha.isoformat() }}">
+    <button type="button" class="resumen-cab" id="resumenCab" aria-expanded="true">
+        <span><i class="far fa-sun me-2"></i><b>Hoy</b> · {{ dias[r.fecha.weekday()]|lower }} {{ r.fecha.strftime('%d/%m') }}</span>
+        <span class="resumen-mini">
+            {% if r.abierto %}{{ r.total }} turno{{ 's' if r.total != 1 }}{% else %}no se atiende{% endif %}
+            <i class="fas fa-chevron-down ms-2 flecha"></i>
+        </span>
+    </button>
+    <div class="resumen-cuerpo">
+        {% if not r.abierto %}
+        <div class="dato"><div class="dato-num"><i class="fas fa-mug-hot"></i></div><div class="dato-txt">Hoy no se atiende</div></div>
+        {% else %}
+        <div class="dato">
+            <div class="dato-num">{{ r.total }}</div>
+            <div class="dato-txt">turno{{ 's' if r.total != 1 }} hoy{% if r.total %} · quedan {{ r.quedan }}{% endif %}
+                {% for nombre, n in r.por_prof %}<span class="sub">{{ nombre }} {{ n }}</span>{% endfor %}
+            </div>
+        </div>
+        <div class="dato ancho">
+            <div class="dato-num"><i class="far fa-clock"></i></div>
+            <div class="dato-txt">
+                {% if r.proximo %}
+                    <span class="etiqueta">{{ 'En curso' if r.en_curso else 'Próximo' }}</span>
+                    <b>{{ r.proximo.inicio|hhmm }}</b> · {{ r.proximo.apellido ~ ', ' if r.proximo.apellido }}{{ r.proximo.nombre }}
+                    <span class="sub">{{ r.proximo.servicio_nombre }}{% if r.por_prof %} · {{ r.proximo.profesional_nombre }}{% endif %}</span>
+                {% elif r.total %}
+                    Ya terminaron los turnos de hoy
+                {% else %}
+                    No hay turnos hoy
+                {% endif %}
+            </div>
+        </div>
+        {% if r.nuevos %}
+        <div class="dato">
+            <div class="dato-num">{{ r.nuevos|length }}</div>
+            <div class="dato-txt">cliente{{ 's' if r.nuevos|length != 1 }} nuevo{{ 's' if r.nuevos|length != 1 }}
+                <span class="sub">{% for t in r.nuevos[:3] %}{{ t.nombre }} {{ t.apellido[:1] }}{{ '.' if t.apellido }}{{ ', ' if not loop.last }}{% endfor %}{% if r.nuevos|length > 3 %}…{% endif %}</span>
+            </div>
+        </div>
+        {% endif %}
+        {% if r.faltas %}
+        <div class="dato">
+            <div class="dato-num rojo">{{ r.faltas|length }}</div>
+            <div class="dato-txt">avis{{ 'aron' if r.faltas|length != 1 else 'ó' }} que falta{{ 'n' if r.faltas|length != 1 }}
+                <span class="sub">{% for f in r.faltas[:3] %}{{ f.nombre }} {{ f.apellido[:1] }}{{ '.' if f.apellido }}{{ ', ' if not loop.last }}{% endfor %}{% if r.faltas|length > 3 %}…{% endif %}</span>
+            </div>
+        </div>
+        {% endif %}
+        {% if r.recuperaciones %}
+        <div class="dato">
+            <div class="dato-num naranja">{{ r.recuperaciones }}</div>
+            <div class="dato-txt">recuperaci{{ 'ones' if r.recuperaciones != 1 else 'ón' }}</div>
+        </div>
+        {% endif %}
+        {% endif %}
+        {% if r.siguiente %}
+        <button type="button" class="dato boton" data-bs-toggle="modal" data-bs-target="#modalRecordar" {% if not r.siguiente_turnos %}disabled{% endif %}>
+            <div class="dato-num verde-wsp"><i class="fab fa-whatsapp"></i></div>
+            <div class="dato-txt">
+                {% if r.siguiente_turnos %}
+                Recordar turnos de {{ 'mañana' if r.siguiente_es_manana else 'el ' ~ dias[r.siguiente.weekday()]|lower }}
+                <span class="sub" id="recordarCuenta">{{ r.siguiente_turnos|length }} turno{{ 's' if r.siguiente_turnos|length != 1 }}</span>
+                {% else %}
+                {{ 'Mañana' if r.siguiente_es_manana else 'El ' ~ dias[r.siguiente.weekday()]|lower }} no hay turnos
+                {% endif %}
+            </div>
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+{% if r.siguiente_turnos %}
+<div class="modal fade" id="modalRecordar" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title fw-bold"><i class="fab fa-whatsapp me-2"></i>Recordatorios · {{ dias[r.siguiente.weekday()]|lower }} {{ r.siguiente.strftime('%d/%m') }}</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0">
+                <div class="px-3 pt-3 pb-2" style="font-size:0.78rem; color:var(--mid);">
+                    Tocá <b>Enviar</b> en cada uno: se abre WhatsApp con el mensaje listo. Queda marcado ✓ en este dispositivo.
+                </div>
+                {% for t in r.siguiente_turnos %}
+                <div class="recordar-row" data-turno="{{ t.id }}" data-pila="{{ t.nombre.split(' ')[0] }}" data-tel="{{ t.telefono or '' }}"
+                     data-servicio="{{ t.servicio_nombre }}" data-inicio="{{ t.inicio }}">
+                    <div class="recordar-hora">{{ t.inicio|hhmm }}</div>
+                    <div style="flex:1; min-width:0;">
+                        <div style="font-weight:600;" class="text-truncate">{{ t.apellido ~ ', ' if t.apellido }}{{ t.nombre }}</div>
+                        <div style="font-size:0.75rem; color:var(--mid);" class="text-truncate">
+                            {{ t.servicio_nombre }}{% if r.por_prof or es_admin %} · {{ t.profesional_nombre }}{% endif %}{% if not t.telefono %} · <span style="color:#C0392B">sin celular</span>{% endif %}
+                        </div>
+                    </div>
+                    <a class="btn-enviar" href="#" target="_blank" rel="noopener"><i class="fab fa-whatsapp me-1"></i><span>Enviar</span></a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 {% endif %}
 
 <!-- ── PESTAÑAS DE DÍA (celular) ── -->
@@ -838,6 +992,45 @@
         modalTurno.show();
     };
     document.getElementById('modalTurno').addEventListener('shown.bs.modal', () => ntCliente.focus());
+
+    // ── resumen del día ──
+    const resumen = document.getElementById('resumen');
+    if (resumen) {
+        const claveRes = 'resumenPlegado:' + resumen.dataset.fecha;   // vuelve a abrirse al día siguiente
+        try { if (localStorage.getItem(claveRes)) resumen.classList.add('plegado'); } catch (e) {}
+        document.getElementById('resumenCab').addEventListener('click', () => {
+            const plegado = resumen.classList.toggle('plegado');
+            try { plegado ? localStorage.setItem(claveRes, '1') : localStorage.removeItem(claveRes); } catch (e) {}
+        });
+    }
+
+    // Recordatorios del próximo día: un WhatsApp por cliente, marcado ✓ al enviarlo
+    const modalRecordar = document.getElementById('modalRecordar');
+    if (modalRecordar) {
+        const fechaSig = {{ resumen.siguiente.isoformat()|tojson if resumen and resumen.siguiente else 'null' }};
+        const cuandoSig = {{ ('mañana ' ~ dias[resumen.siguiente.weekday()]|lower if resumen.siguiente_es_manana else 'el ' ~ dias[resumen.siguiente.weekday()]|lower)|tojson if resumen and resumen.siguiente else 'null' }};
+        const filas = [...modalRecordar.querySelectorAll('.recordar-row')];
+        const enviados = () => filas.filter(f => f.classList.contains('enviado')).length;
+        const actualizarCuenta = () => {
+            const c = document.getElementById('recordarCuenta');
+            if (c) c.textContent = `${enviados()} de ${filas.length} enviados`;
+        };
+        filas.forEach(f => {
+            const d = f.dataset;
+            const clave = `recordado:${fechaSig}:${d.turno}`;
+            const boton = f.querySelector('.btn-enviar');
+            boton.href = linkWsp(d.tel,
+                `¡Hola ${d.pila}! Te recuerdo tu turno de ${d.servicio} ${cuandoSig} ${ddmm(fechaSig)} a las ${hhmm(+d.inicio)}. ¡Te esperamos!` + firma);
+            const marcar = () => { f.classList.add('enviado'); boton.querySelector('span').textContent = 'Enviado ✓'; };
+            try { if (localStorage.getItem(clave)) marcar(); } catch (e) {}
+            boton.addEventListener('click', () => {
+                marcar();
+                try { localStorage.setItem(clave, '1'); } catch (e) {}
+                actualizarCuenta();
+            });
+        });
+        if (enviados()) actualizarCuenta();
+    }
 
     // ── inicio ──
     let estado = null;

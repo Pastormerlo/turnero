@@ -194,6 +194,26 @@ check(uno("select rol from profesionales where id=?", (YO,)) == 'admin', 'admin 
 # ── clientes ──
 c.post(f'/cliente/{ana}/baja', data={'_csrf': t})
 check(uno("select count(*) from turnos where cliente_id=?", (ana,)) == 0, 'baja de cliente libera sus turnos')
+# ── resumen del día ──
+dia_hoy = A.hoy()
+check('id="resumen"' in c.get('/agenda').get_data(as_text=True), 'resumen del día en la semana actual')
+check('id="resumen"' not in c.get(f'/agenda?fecha={(dia_hoy + timedelta(days=14)).isoformat()}').get_data(as_text=True), 'sin resumen en otras semanas')
+# Abrir todos los días de 0 a 24 para poder agendar hoy y mañana a cualquier hora que corra el test
+c.post('/negocio', data={'_csrf': t, 'nombre': 'Bienestar', 'hora_apertura': '0', 'hora_cierre': '1440',
+                         'intervalo': '15', 'dias': [str(d) for d in range(7)]})
+manana = dia_hoy + timedelta(days=1)
+eva = nuevo_cliente(c, t, 'Eva', '11 4000-1111')
+ahora_min = A.ahora().hour * 60 + A.ahora().minute
+hora_hoy = min(1425, (ahora_min // 15 + 1) * 15)
+turno(c, t, cliente_id=eva, servicio_id=CEJAS, profesional_id=YO, fecha=dia_hoy.isoformat(), inicio=hora_hoy)
+turno(c, t, cliente_id=eva, servicio_id=CEJAS, profesional_id=YO, fecha=manana.isoformat(), inicio=600)
+html = c.get('/agenda').get_data(as_text=True)
+check('Test, Eva' in html.split('id="resumen"')[1].split('PESTAÑAS')[0], 'el próximo turno de hoy aparece en el resumen')
+check('cliente nuevo' in html or 'clientes nuevos' in html, 'el resumen marca clientes nuevos')
+check('id="modalRecordar"' in html and 'Recordar turnos de mañana' in html, 'botón para recordar los turnos de mañana')
+check(html.count('class="recordar-row"') == uno("select count(*) from turnos where fecha=?", (manana.isoformat(),)) + uno(
+    "select count(*) from turnos where tipo='fijo' and dia_semana=?", (manana.weekday(),)), '  → lista todos los turnos de mañana')
+
 for url in ['/clientes', '/clientes?q=gru', '/equipo', '/negocio', '/ayuda', f'/agenda?fecha={lunes.isoformat()}', '/agenda?fecha=basura']:
     check(c.get(url).status_code == 200, f'GET {url}')
 

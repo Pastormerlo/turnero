@@ -11,7 +11,7 @@ import random
 import secrets
 import sqlite3
 import sys
-from datetime import date, timedelta
+from datetime import timedelta
 
 import app as A
 from werkzeug.security import generate_password_hash
@@ -50,6 +50,8 @@ random.seed(11)
 for n, a in zip(nombres, apellidos):
     con.execute("INSERT INTO clientes (negocio_id, nombre, apellido, telefono) VALUES (1, ?, ?, ?)",
                 (n, a, f'11 4{random.randint(100, 999)}-{random.randint(1000, 9999)}'))
+# Casi todos son clientes de hace tiempo; los dos últimos, nuevos
+con.execute("UPDATE clientes SET creado_en = datetime('now', '-90 days') WHERE id <= ?", (len(nombres) - 2,))
 
 
 def libre(prof, dia, fecha, inicio, dur, sid, cupo):
@@ -79,7 +81,7 @@ for cid, dia, inicio in [(6, 1, 600), (7, 2, 660), (8, 4, 570)]:
                 "VALUES (1, 1, ?, 1, 'fijo', ?, ?, 60)", (cid, dia, inicio))
 
 # Turnos sueltos esta semana y la próxima
-lunes = date.today() - timedelta(days=date.today().weekday())
+lunes = A.hoy() - timedelta(days=A.hoy().weekday())
 for _ in range(40):
     f = lunes + timedelta(days=random.randint(0, 12))
     if f.weekday() == 6:
