@@ -1,11 +1,15 @@
 """
-Crea un negocio de demostración con servicios, clientes y turnos inventados.
+Crea o reinicia el negocio de demostración, con servicios, clientes y turnos inventados.
 
 Uso:
-    python crear_demo.py                 → contraseña generada al azar
-    python crear_demo.py MiClave123      → contraseña elegida
+    python crear_demo.py               → crea la demo, si todavía no existe
+    python crear_demo.py --reiniciar   → la borra y la vuelve a crear con turnos de esta semana
 
-Solo funciona sobre una base vacía (no toca datos reales).
+A la demo se entra con el botón "Probar la demo" de la pantalla de ingreso, sin
+contraseña. Solo se toca el negocio de la demo: los demás negocios de la base
+(por ejemplo, gente que se registró para probar) no se modifican.
+Los celulares de la demo son números que no existen (11 0000-…), para que nadie
+le mande un WhatsApp a un desconocido por accidente.
 """
 import random
 import secrets
@@ -16,22 +20,28 @@ from datetime import timedelta
 import app as A
 from werkzeug.security import generate_password_hash
 
-EMAIL = 'demo@turnero.test'
+EMAIL = A.DEMO_EMAIL
 
 con = sqlite3.connect(A.DATABASE)
-if con.execute("SELECT COUNT(*) FROM usuarios").fetchone()[0]:
-    sys.exit("La base ya tiene datos: no se cargó la demo.")
+con.execute("PRAGMA foreign_keys = ON")
 
-password = sys.argv[1] if len(sys.argv) > 1 else secrets.token_urlsafe(8)
-if len(password) < 6:
-    sys.exit("La contraseña debe tener al menos 6 caracteres.")
-pw = generate_password_hash(password)
+anterior = con.execute("SELECT id FROM usuarios WHERE email=?", (EMAIL,)).fetchone()
+if anterior:
+    if '--reiniciar' not in sys.argv:
+        sys.exit("La demo ya existe. Usá --reiniciar para volver a crearla.")
+    # Borra el negocio de la demo con todos sus datos (en cascada)
+    con.execute("DELETE FROM usuarios WHERE id=?", (anterior[0],))
+    con.execute("DELETE FROM profesionales WHERE email='martin@turnero.test'")
 
-con.execute("INSERT INTO usuarios (email, password) VALUES (?, ?)", (EMAIL, pw))
-con.execute("INSERT INTO negocios (user_id, nombre, hora_apertura, hora_cierre, intervalo, dias) "
-            "VALUES (1, 'Espacio Bienestar', 540, 1200, 15, '0,1,2,3,4,5')")
-con.execute("INSERT INTO profesionales (negocio_id, nombre, email, password, rol) VALUES (1, 'Laura', ?, ?, 'admin')", (EMAIL, pw))
-con.execute("INSERT INTO profesionales (negocio_id, nombre, email, password, rol) VALUES (1, 'Martín', 'martin@turnero.test', ?, 'profesional')", (pw,))
+pw = generate_password_hash(secrets.token_urlsafe(16))   # se entra sin contraseña, con el botón
+
+uid = con.execute("INSERT INTO usuarios (email, password) VALUES (?, ?)", (EMAIL, pw)).lastrowid
+nid = con.execute("INSERT INTO negocios (user_id, nombre, hora_apertura, hora_cierre, intervalo, dias) "
+                  "VALUES (?, 'Espacio Bienestar', 540, 1200, 15, '0,1,2,3,4,5')", (uid,)).lastrowid
+laura = con.execute("INSERT INTO profesionales (negocio_id, nombre, email, password, rol) VALUES (?, 'Laura', ?, ?, 'admin')",
+                    (nid, EMAIL, pw)).lastrowid
+martin = con.execute("INSERT INTO profesionales (negocio_id, nombre, email, password, rol) "
+                     "VALUES (?, 'Martín', 'martin@turnero.test', ?, 'profesional')", (nid, pw)).lastrowid
 
 servicios = [  # nombre, duración, cupo, color
     ('Masaje descontracturante', 60, 1, 'verde'),
@@ -39,22 +49,25 @@ servicios = [  # nombre, duración, cupo, color
     ('Depilación de cejas', 15, 1, 'rosa'),
     ('Clase de stretching', 60, 6, 'violeta'),
 ]
-for s in servicios:
-    con.execute("INSERT INTO servicios (negocio_id, nombre, duracion, cupo, color) VALUES (1, ?, ?, ?, ?)", s)
+sid = [con.execute("INSERT INTO servicios (negocio_id, nombre, duracion, cupo, color) VALUES (?, ?, ?, ?, ?)",
+                   (nid,) + s).lastrowid for s in servicios]
 
 nombres = ['Ana', 'Belén', 'Carla', 'Diego', 'Elena', 'Florencia', 'Gabriel', 'Hernán', 'Inés', 'Julieta',
            'Karina', 'Lucía', 'Mariana', 'Nicolás', 'Olga', 'Pablo', 'Romina', 'Sofía']
 apellidos = ['Gómez', 'Pérez', 'Rodríguez', 'Fernández', 'López', 'Martínez', 'García', 'Sánchez', 'Romero',
              'Sosa', 'Torres', 'Álvarez', 'Ruiz', 'Ramírez', 'Flores', 'Acosta', 'Benítez', 'Medina']
+cid = []
+for i, (n, a) in enumerate(zip(nombres, apellidos), start=1):
+    # Casi todos son clientes de hace tiempo; los dos últimos, nuevos
+    antiguedad = "datetime('now')" if i > len(nombres) - 2 else "datetime('now', '-90 days')"
+    cid.append(con.execute(
+        f"INSERT INTO clientes (negocio_id, nombre, apellido, telefono, creado_en) VALUES (?, ?, ?, ?, {antiguedad})",
+        (nid, n, a, f'11 0000-{i:04d}')).lastrowid)
+
 random.seed(11)
-for n, a in zip(nombres, apellidos):
-    con.execute("INSERT INTO clientes (negocio_id, nombre, apellido, telefono) VALUES (1, ?, ?, ?)",
-                (n, a, f'11 4{random.randint(100, 999)}-{random.randint(1000, 9999)}'))
-# Casi todos son clientes de hace tiempo; los dos últimos, nuevos
-con.execute("UPDATE clientes SET creado_en = datetime('now', '-90 days') WHERE id <= ?", (len(nombres) - 2,))
 
 
-def libre(prof, dia, fecha, inicio, dur, sid, cupo):
+def libre(prof, dia, fecha, inicio, dur, servicio, cupo):
     """Chequeo simple para no superponer turnos al generar la demo."""
     filas = con.execute(
         "SELECT servicio_id, inicio, duracion FROM turnos WHERE profesional_id=? AND "
@@ -62,23 +75,28 @@ def libre(prof, dia, fecha, inicio, dur, sid, cupo):
     mismos = 0
     for s, i, d in filas:
         if i < inicio + dur and inicio < i + d:
-            if s == sid and i == inicio:
+            if s == servicio and i == inicio:
                 mismos += 1
             else:
                 return False
     return mismos < cupo
 
 
+def turno(prof, cliente, servicio, inicio, dur, dia=None, fecha=None):
+    con.execute(
+        "INSERT INTO turnos (negocio_id, profesional_id, cliente_id, servicio_id, tipo, dia_semana, fecha, inicio, duracion) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (nid, prof, cliente, servicio, 'fijo' if fecha is None else 'puntual', dia, fecha, inicio, dur))
+
+
 # Clase grupal fija: lunes y jueves 18:00 con Martín (5 personas)
-for cid in range(1, 6):
+for c in cid[:5]:
     for dia in (0, 3):
-        con.execute("INSERT INTO turnos (negocio_id, profesional_id, cliente_id, servicio_id, tipo, dia_semana, inicio, duracion) "
-                    "VALUES (1, 2, ?, 4, 'fijo', ?, 1080, 60)", (cid, dia))
+        turno(martin, c, sid[3], 1080, 60, dia=dia)
 
 # Masajes fijos semanales con Laura
-for cid, dia, inicio in [(6, 1, 600), (7, 2, 660), (8, 4, 570)]:
-    con.execute("INSERT INTO turnos (negocio_id, profesional_id, cliente_id, servicio_id, tipo, dia_semana, inicio, duracion) "
-                "VALUES (1, 1, ?, 1, 'fijo', ?, ?, 60)", (cid, dia, inicio))
+for c, dia, inicio in [(cid[5], 1, 600), (cid[6], 2, 660), (cid[7], 4, 570)]:
+    turno(laura, c, sid[0], inicio, 60, dia=dia)
 
 # Turnos sueltos esta semana y la próxima
 lunes = A.hoy() - timedelta(days=A.hoy().weekday())
@@ -86,16 +104,13 @@ for _ in range(40):
     f = lunes + timedelta(days=random.randint(0, 12))
     if f.weekday() == 6:
         continue
-    sid = random.choice([1, 2, 3, 3])
-    dur = servicios[sid - 1][1]
+    k = random.choice([0, 1, 2, 2])
+    dur = servicios[k][1]
     inicio = random.choice(range(540, 1200 - dur + 1, 15))
-    prof = random.choice([1, 1, 2])
-    cid = random.randint(6, len(nombres))
-    if libre(prof, f.weekday(), f.isoformat(), inicio, dur, sid, 1):
-        con.execute("INSERT INTO turnos (negocio_id, profesional_id, cliente_id, servicio_id, tipo, fecha, inicio, duracion) "
-                    "VALUES (1, ?, ?, ?, 'puntual', ?, ?, ?)", (prof, cid, sid, f.isoformat(), inicio, dur))
+    prof = random.choice([laura, laura, martin])
+    c = random.choice(cid[5:])
+    if libre(prof, f.weekday(), f.isoformat(), inicio, dur, sid[k], 1):
+        turno(prof, c, sid[k], inicio, dur, fecha=f.isoformat())
 con.commit()
 
-print("Demo creada.")
-print(f"  Email:      {EMAIL}")
-print(f"  Contraseña: {password}")
+print("Demo " + ("reiniciada." if anterior else "creada.") + " Se entra con el botón \"Probar la demo\".")

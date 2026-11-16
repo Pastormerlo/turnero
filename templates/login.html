@@ -142,6 +142,17 @@
         }
         .link-registro a:hover { text-decoration: underline; }
         .mb-field { margin-bottom: 1.1rem; }
+        .btn-demo {
+            width: 100%; display: flex; align-items: center; justify-content: center; gap: 0.8rem;
+            background: #F77F00; color: #fff; border: none; border-radius: 12px;
+            padding: 0.85rem 1rem; cursor: pointer; font-family: 'DM Sans', sans-serif;
+            font-size: 1rem; font-weight: 700; transition: all 0.2s; text-align: left;
+        }
+        .btn-demo:hover { background: #E07000; }
+        .btn-demo i { font-size: 1.6rem; }
+        .btn-demo small { display: block; font-size: 0.75rem; font-weight: 400; opacity: 0.9; }
+        .separador { display: flex; align-items: center; gap: 0.7rem; margin: 1.3rem 0 1.1rem; color: #9AA59A; font-size: 0.75rem; }
+        .separador::before, .separador::after { content: ''; flex: 1; border-top: 1px solid #ECEFEA; }
     </style>
 </head>
 <body>
@@ -165,12 +176,23 @@
             {% endfor %}
         {% endwith %}
 
+        {% if hay_demo %}
+        <form action="{{ url_for('entrar_demo') }}" method="POST" class="m-0">
+            <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+            <button type="submit" class="btn-demo">
+                <i class="fas fa-play-circle"></i>
+                <span>Probar la demo<small>Sin registrarte ni poner contraseña</small></span>
+            </button>
+        </form>
+        <div class="separador"><span>o ingresá con tu cuenta</span></div>
+        {% endif %}
+
         <form action="{{ url_for('login') }}" method="POST">
             <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
             <div class="mb-field">
                 <label class="form-label-custom">Email</label>
                 <input type="email" name="email" class="form-control-custom"
-                       placeholder="nombre@ejemplo.com" required autofocus>
+                       placeholder="nombre@ejemplo.com" required {% if not hay_demo %}autofocus{% endif %}>
             </div>
             <div class="mb-field">
                 <label class="form-label-custom">Contraseña</label>

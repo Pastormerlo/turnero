@@ -51,7 +51,9 @@ app.config.update(
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-VERSION    = '1.1'
+VERSION    = '1.2'
+# Cuenta de demostración: se entra con el botón "Probar la demo", sin contraseña
+DEMO_EMAIL = os.environ.get('DEMO_EMAIL', 'demo@turnero.test')
 DIAS       = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
 DIAS_CORTO = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
 DURACIONES = [15, 20, 30, 40, 45, 60, 75, 90, 120, 150, 180, 240]
@@ -405,6 +407,23 @@ def registro():
     return render_template('registro.html', error=error)
 
 
+def iniciar_sesion(prof, demo=False):
+    neg = query("SELECT * FROM negocios WHERE id=?", (prof['negocio_id'],), one=True)
+    session.clear()
+    session['profesional_id'] = prof['id']
+    session['negocio_id']     = prof['negocio_id']
+    session['nombre']         = prof['nombre']
+    session['rol']            = prof['rol']
+    session['logo']           = neg['logo_url'] if neg else None
+    session['negocio_nombre'] = neg['nombre'] if neg else 'Mi negocio'
+    session['demo']           = demo
+    return redirect(url_for('agenda'))
+
+
+def profesional_demo():
+    return query("SELECT * FROM profesionales WHERE email=? AND activo=1", (DEMO_EMAIL,), one=True)
+
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
@@ -414,18 +433,20 @@ def login():
         prof = query("SELECT * FROM profesionales WHERE email=? AND activo=1", (email,), one=True)
 
         if prof and check_password_hash(prof['password'], password):
-            neg = query("SELECT * FROM negocios WHERE id=?", (prof['negocio_id'],), one=True)
-            session.clear()
-            session['profesional_id'] = prof['id']
-            session['negocio_id']     = prof['negocio_id']
-            session['nombre']         = prof['nombre']
-            session['rol']            = prof['rol']
-            session['logo']           = neg['logo_url'] if neg else None
-            session['negocio_nombre'] = neg['nombre'] if neg else 'Mi negocio'
-            return redirect(url_for('agenda'))
+            return iniciar_sesion(prof, demo=email == DEMO_EMAIL)
         error = 'Email o contraseña incorrectos.'
 
-    return render_template('login.html', error=error)
+    return render_template('login.html', error=error, hay_demo=profesional_demo() is not None)
+
+
+@app.route('/demo', methods=['POST'])
+def entrar_demo():
+    """Entra directo al negocio de demostración, sin contraseña."""
+    prof = profesional_demo()
+    if not prof:
+        flash('La demo no está disponible en este momento.', 'warning')
+        return redirect(url_for('login'))
+    return iniciar_sesion(prof, demo=True)
 
 
 @app.route('/logout', methods=['POST'])
@@ -461,6 +482,9 @@ def negocio():
             flash('Elegí al menos un día de atención.', 'danger')
         else:
             file = request.files.get('logo')
+            if file and file.filename and session.get('demo'):
+                flash('En la demo no se pueden subir imágenes; el resto se guardó.', 'warning')
+                file = None
             if file and file.filename:
                 if not allowed_file(file.filename):
                     flash('El logo tiene que ser una imagen (png, jpg, gif o webp).', 'danger')

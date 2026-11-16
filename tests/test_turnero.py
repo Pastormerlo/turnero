@@ -214,6 +214,30 @@ check('id="modalRecordar"' in html and 'Recordar turnos de mañana' in html, 'bo
 check(html.count('class="recordar-row"') == uno("select count(*) from turnos where fecha=?", (manana.isoformat(),)) + uno(
     "select count(*) from turnos where tipo='fijo' and dia_semana=?", (manana.weekday(),)), '  → lista todos los turnos de mañana')
 
+# ── demo sin contraseña ──
+import runpy
+c4 = A.app.test_client()
+check('Probar la demo' not in c4.get('/login').get_data(as_text=True), 'sin demo cargada no aparece el botón')
+runpy.run_path(os.path.join(PROY, 'crear_demo.py'), run_name='__main__')
+html = c4.get('/login').get_data(as_text=True)
+check('Probar la demo' in html, 'con la demo cargada aparece "Probar la demo"')
+t4 = re.search(r'name="_csrf" value="([^"]+)"', html).group(1)
+r = c4.post('/demo', data={'_csrf': t4})
+check(r.status_code == 302 and r.headers['Location'].endswith('/agenda'), 'entrar a la demo sin contraseña')
+html = c4.get('/agenda').get_data(as_text=True)
+check('Estás en la demo' in html and 'Espacio Bienestar' in html, '  → muestra el cartel de demo y su negocio')
+check(uno("select count(*) from clientes c join negocios n on n.id=c.negocio_id join usuarios u on u.id=n.user_id "
+          "where u.email=? and c.telefono not like '11 0000-%'", (A.DEMO_EMAIL,)) == 0, 'celulares de la demo son números que no existen')
+mis_turnos = uno("select count(*) from turnos t join negocios n on n.id=t.negocio_id where n.nombre='Bienestar'")
+demo_antes = uno("select id from negocios where nombre='Espacio Bienestar'")
+sys.argv = ['crear_demo.py', '--reiniciar']
+runpy.run_path(os.path.join(PROY, 'crear_demo.py'), run_name='__main__')
+check(uno("select count(*) from negocios where nombre='Espacio Bienestar'") == 1 and
+      uno("select id from negocios where nombre='Espacio Bienestar'") != demo_antes, 'reiniciar recrea la demo')
+check(uno("select count(*) from turnos t join negocios n on n.id=t.negocio_id where n.nombre='Bienestar'") == mis_turnos,
+      '  → sin tocar los otros negocios')
+check('/login' in c4.get('/agenda').headers.get('Location', ''), '  → quien estaba en la demo vieja vuelve al ingreso')
+
 for url in ['/clientes', '/clientes?q=gru', '/equipo', '/negocio', '/ayuda', f'/agenda?fecha={lunes.isoformat()}', '/agenda?fecha=basura']:
     check(c.get(url).status_code == 200, f'GET {url}')
 
